@@ -60,29 +60,55 @@ function initEnvironment() {
   }
 }
 
-// Helper: Get local LAN IP
+// Helper: Get local LAN IP (highly compatible & ignores virtual interfaces)
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
+  let fallbackIP = '127.0.0.1';
+
   for (const name of Object.keys(interfaces)) {
+    // Skip virtual/docker bridges
+    if (name.startsWith('docker') || name.startsWith('vbox') || name.startsWith('br-') || name.startsWith('veth') || name.startsWith('lo')) {
+      continue;
+    }
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
+      // Check for both string 'IPv4' and numeric 4 to support different Node versions
+      if ((iface.family === 'IPv4' || iface.family === 4) && !iface.internal) {
+        const addr = iface.address;
+        // Prioritize standard local private subnets
+        if (addr.startsWith('192.168.') || addr.startsWith('10.') || addr.startsWith('172.')) {
+          return addr;
+        }
+        fallbackIP = addr;
       }
     }
   }
-  return '127.0.0.1';
+  return fallbackIP;
 }
 
-// Helper: Get Tailscale IP
+// Helper: Get Tailscale IP (direct interface check + command fallback)
 function getTailscaleIP(callback) {
   if (isSimulatorMode) {
     return callback('100.82.140.45'); // Simulated Tailscale IP
   }
-  exec('tailscale ip -4', (err, stdout) => {
-    if (err || !stdout.trim()) {
-      return callback('VPN Offline');
+
+  // 1. Direct Interface Check (Instant, avoids spawning sub-processes)
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    if (name.includes('tailscale') || name === 'ts0') {
+      for (const iface of interfaces[name]) {
+        if ((iface.family === 'IPv4' || iface.family === 4) && !iface.internal) {
+          return callback(iface.address);
+        }
+      }
     }
-    callback(stdout.trim());
+  }
+
+  // 2. Command Fallback
+  exec('tailscale ip -4', (err, stdout) => {
+    if (!err && stdout.trim()) {
+      return callback(stdout.trim());
+    }
+    callback('VPN Offline');
   });
 }
 
