@@ -16,15 +16,21 @@ fi
 
 CURRENT_USER=$(whoami)
 USER_HOME=$HOME
-TARGET_DIR="$USER_HOME/mc_server"
+TARGET_DIR="$USER_HOME/mc_server/controller"
 
 echo "[*] Detected User: $CURRENT_USER"
 echo "[*] Detected Home Directory: $USER_HOME"
-echo "[*] Expected Minecraft Directory: $TARGET_DIR"
+echo "[*] Expected Minecraft Directory: $USER_HOME/mc_server"
+echo "[*] Controller Installation Directory: $TARGET_DIR"
 
 # Check if Minecraft server directory exists
+if [ ! -d "$USER_HOME/mc_server" ]; then
+    echo "[*] Creating Minecraft server folder at $USER_HOME/mc_server..."
+    mkdir -p "$USER_HOME/mc_server"
+fi
+
 if [ ! -d "$TARGET_DIR" ]; then
-    echo "[*] Creating Minecraft server folder at $TARGET_DIR..."
+    echo "[*] Creating controller folder at $TARGET_DIR..."
     mkdir -p "$TARGET_DIR"
 fi
 

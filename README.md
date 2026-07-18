@@ -24,20 +24,20 @@ Sistem, güvenlik ve performans odaklı iki ana katmandan oluşur:
 
 ## 🚀 2. Kurulum ve Çalıştırma
 
-Tüm kontrol paneli ve servis yapılandırması sunucudaki Minecraft klasörünün (`~/mc_server`) içerisinde toplanmıştır.
+Kontrol panelinin dosyaları, sunucunuzdaki Minecraft klasörünün altında açılacak bağımsız bir `controller` klasöründe (`~/mc_server/controller/`) yer alır. Böylece sunucu dosyalarınız ile panel dosyaları birbirine karışmaz.
 
 ### Yöntem A: Otomatik Kurulum (Önerilen)
 Sunucunuzda kontrol panelinin bulunduğu klasörde terminali açın ve şu tek satırlık komutu çalıştırın:
 ```bash
 chmod +x install.sh && ./install.sh
 ```
-*Bu betik; kullanıcı adınızı ve ev dizininizi otomatik tespit eder, dosyaları `~/mc_server` içine kopyalar ve arka planda 7/24 çalışacak Systemd servisini kurup başlatır.*
+*Bu betik; kullanıcı adınızı ve ev dizininizi otomatik tespit eder, dosyaları `~/mc_server/controller/` klasörüne kopyalar ve arka planda 7/24 çalışacak Systemd servisini kurup başlatır.*
 
 ### Yöntem B: Manuel Kurulum
-1. Projedeki tüm dosyaları (`server.js`, `index.html`, `css/`, `js/`) sunucunuzdaki Minecraft klasörünün (`~/mc_server/`) içine kopyalayın.
+1. `~/mc_server/` dizini altında `controller` adında bir klasör oluşturun ve tüm proje dosyalarını (`server.js`, `index.html`, `css/`, `js/`) bu klasörün içine kopyalayın.
 2. Aşağıdaki komutla paneli doğrudan başlatabilirsiniz:
    ```bash
-   cd ~/mc_server
+   cd ~/mc_server/controller
    node server.js
    ```
 3. Tarayıcınızdan şu adrese girerek panele erişin:
@@ -52,7 +52,7 @@ Kontrol panelinin sunucu her açıldığında arka planda otomatik olarak başla
 
 1. `mcs-controller.service` dosyasını sistem servis dizinine kopyalayın:
    ```bash
-   sudo cp ~/mc_server/mcs-controller.service /etc/systemd/system/mcs-controller.service
+   sudo cp ~/mc_server/controller/mcs-controller.service /etc/systemd/system/mcs-controller.service
    ```
 2. Servisleri güncelleyip aktifleştirin:
    ```bash
