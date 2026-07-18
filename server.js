@@ -6,7 +6,7 @@ const os = require('os');
 const { EventEmitter } = require('events');
 
 const PORT = 8080;
-const SERVER_DIR = path.resolve(__dirname, '..');
+const SERVER_DIR = __dirname;
 const LOG_FILE = path.join(SERVER_DIR, 'logs', 'latest.log');
 const JAR_FILE = path.join(SERVER_DIR, 'server.jar');
 const LOCK_FILE = path.join(SERVER_DIR, 'world', 'session.lock');
