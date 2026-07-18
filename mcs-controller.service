@@ -1,0 +1,15 @@
+[Unit]
+Description=Minecraft Server Web Controller
+After=network.target
+
+[Service]
+Type=simple
+User=enis27
+WorkingDirectory=/home/enis27/YAZILIM/minecraftServerController
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

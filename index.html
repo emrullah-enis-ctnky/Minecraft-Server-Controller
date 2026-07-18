@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Cross-Play Server Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                        <line x1="7" y1="2" x2="7" y2="22"></line>
+                        <line x1="17" y1="2" x2="17" y2="22"></line>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <line x1="2" y1="7" x2="7" y2="7"></line>
+                        <line x1="2" y1="17" x2="7" y2="17"></line>
+                        <line x1="17" y1="17" x2="22" y2="17"></line>
+                        <line x1="17" y1="7" x2="22" y2="7"></line>
+                    </svg>
+                </div>
+                <div class="title-group">
+                    <h1>Minecraft Server Controller</h1>
+                    <span class="subtitle">Cross-Play Bridge Management Panel</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div id="mode-badge" class="badge badge-simulator">Simulator Mode</div>
+                <div class="connection-status">
+                    <span class="status-dot disconnected" id="connection-dot"></span>
+                    <span id="connection-text">Connecting...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="app-grid">
+            <!-- LEFT PANEL: STATUS & LIFECYCLE CONTROLS -->
+            <section class="grid-card status-card">
+                <div class="card-header">
+                    <h2>Server Health & Status</h2>
+                </div>
+                <div class="card-body">
+                    <!-- Status Display -->
+                    <div class="status-display-wrapper">
+                        <div class="status-indicator">
+                            <span class="status-pulse-ring status-stopped" id="status-ring"></span>
+                            <div class="status-text-lg" id="server-status-label">STOPPED</div>
+                        </div>
+                    </div>
+
+                    <!-- Host Stats -->
+                    <div class="metrics-container">
+                        <div class="metric-row">
+                            <div class="metric-info">
+                                <span>CPU Usage</span>
+                                <span id="cpu-value">0%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="cpu-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="metric-row">
+                            <div class="metric-info">
+                                <span>RAM Allocated</span>
+                                <span id="ram-value">0 / 4 GB</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="ram-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dual IP Binding Info -->
+                    <div class="network-panel">
+                        <h3>Dual-IP Network Bindings</h3>
+                        <div class="network-grid">
+                            <div class="net-item">
+                                <span class="net-label">Local IP</span>
+                                <span class="net-value" id="local-ip-text">127.0.0.1</span>
+                            </div>
+                            <div class="net-item">
+                                <span class="net-label">Tailscale VPN IP</span>
+                                <span class="net-value text-glowing-blue" id="tailscale-ip-text">VPN Offline</span>
+                            </div>
+                            <div class="net-item">
+                                <span class="net-label">Java / Bedrock Port</span>
+                                <span class="net-value text-glowing-green" id="port-text">19132</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Server Controls -->
+                    <div class="control-actions">
+                        <button id="btn-start" class="btn btn-start">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            Start Server
+                        </button>
+                        <button id="btn-stop" class="btn btn-stop" disabled>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                            Stop Server
+                        </button>
+                        <button id="btn-kill" class="btn btn-kill" disabled>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                            Force Kill
+                        </button>
+                        <button id="btn-lock" class="btn btn-action">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            Unlock Map
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MIDDLE PANEL: WEB LOGCAT TERMINAL -->
+            <section class="grid-card terminal-card">
+                <div class="card-header terminal-header">
+                    <h2>Live Terminal Logcat</h2>
+                    <button class="btn btn-clear-terminal" id="btn-clear-term">Clear Logs</button>
+                </div>
+                <div class="card-body terminal-body">
+                    <div class="terminal-display" id="terminal-output">
+                        <div class="terminal-line system-line">[System] Console logging initialized. Waiting for connection...</div>
+                    </div>
+                    <form class="terminal-input-wrapper" id="terminal-form">
+                        <span class="terminal-prompt">&gt;</span>
+                        <input type="text" id="terminal-input" placeholder="Type minecraft command (e.g. /op Notch, /time set day)..." autocomplete="off">
+                        <button type="submit" class="btn-send-cmd">Send</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- RIGHT PANEL: PLAYER MANAGEMENT HUB -->
+            <section class="grid-card players-card">
+                <div class="card-header">
+                    <h2>Player Management Hub</h2>
+                </div>
+                <div class="card-body">
+                    <!-- Tab Headers -->
+                    <div class="tabs-container">
+                        <button class="tab-btn active" data-tab="tab-active">Active (<span id="active-count">0</span>)</button>
+                        <button class="tab-btn" data-tab="tab-ops">Operators (<span id="ops-count">0</span>)</button>
+                        <button class="tab-btn" data-tab="tab-whitelist">Whitelist (<span id="wl-count">0</span>)</button>
+                        <button class="tab-btn" data-tab="tab-banned">Banned (<span id="banned-count">0</span>)</button>
+                    </div>
+
+                    <!-- Quick Add Player Form -->
+                    <div class="quick-add-player">
+                        <input type="text" id="player-action-input" placeholder="Enter username...">
+                        <button class="btn btn-action btn-sm" id="btn-add-whitelist">Whitelist</button>
+                        <button class="btn btn-action btn-sm" id="btn-add-op">Make OP</button>
+                        <button class="btn fill-red btn-sm" id="btn-add-ban">Ban</button>
+                    </div>
+
+                    <!-- Tab Contents -->
+                    <div class="tab-content active" id="tab-active">
+                        <div class="player-list" id="active-players-list">
+                            <div class="empty-list-msg">No players currently online.</div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-ops">
+                        <div class="player-list" id="ops-players-list">
+                            <div class="empty-list-msg">No operators configured.</div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-whitelist">
+                        <div class="player-list" id="whitelist-players-list">
+                            <div class="empty-list-msg">Whitelist is empty.</div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-banned">
+                        <div class="player-list" id="banned-players-list">
+                            <div class="empty-list-msg">No banned players.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- SYSTEMD INSTRUCTIONS DRAWER -->
+        <footer class="app-footer">
+            <details class="systemd-details">
+                <summary>⚙️ Systemd Auto-Start Service Configuration Guide</summary>
+                <div class="details-content">
+                    <p>To run this controller automatically on boot as a background service on CachyOS, follow these commands:</p>
+                    <pre><code># 1. Copy the service file to the systemd directory:
+sudo cp mcs-controller.service /etc/systemd/system/mcs-controller.service
+
+# 2. Reload systemd files:
+sudo systemctl daemon-reload
+
+# 3. Enable the service to run on boot:
+sudo systemctl enable mcs-controller.service
+
+# 4. Start the service immediately:
+sudo systemctl start mcs-controller.service
+
+# 5. Check status of the controller:
+sudo systemctl status mcs-controller.service</code></pre>
+                </div>
+            </details>
+        </footer>
+    </div>
+    
+    <script src="js/main.js"></script>
+</body>
+</html>
