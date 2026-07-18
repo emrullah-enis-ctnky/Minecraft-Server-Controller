@@ -746,7 +746,7 @@ const server = http.createServer((req, res) => {
 
   // Security: prevent directory traversal
   const relative = path.relative(__dirname, filePath);
-  if (relative.startsWith('..') || path.isAbsolute(relative) === false) {
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     res.writeHead(403);
     res.end('Access Forbidden');
     return;
