@@ -773,10 +773,10 @@ if (!isSimulatorMode) {
   startTailLog();
 }
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`==================================================`);
   console.log(`  Minecraft Cross-Play Server Controller is LIVE  `);
-  console.log(`  URL: http://localhost:${PORT}                    `);
+  console.log(`  URL: http://0.0.0.0:${PORT} (LAN & VPN)          `);
   console.log(`  Mode: ${isSimulatorMode ? 'SIMULATOR (Demo)' : 'PRODUCTION'}   `);
   console.log(`==================================================`);
 });
