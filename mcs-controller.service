@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=enis27
-WorkingDirectory=/home/enis27/mc_server
-ExecStart=/usr/bin/node /home/enis27/mc_server/server.js
+WorkingDirectory=~/mc_server
+ExecStart=/usr/bin/node ~/mc_server/server.js
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
