@@ -192,21 +192,10 @@
             <details class="systemd-details">
                 <summary>⚙️ Systemd Auto-Start Service Configuration Guide</summary>
                 <div class="details-content">
-                    <p>To run this controller automatically on boot as a background service on CachyOS, follow these commands:</p>
-                    <pre><code># 1. Copy the service file to the systemd directory:
-sudo cp ~/mc_server/mcs-controller.service /etc/systemd/system/mcs-controller.service
-
-# 2. Reload systemd files:
-sudo systemctl daemon-reload
-
-# 3. Enable the service to run on boot:
-sudo systemctl enable mcs-controller.service
-
-# 4. Start the service immediately:
-sudo systemctl start mcs-controller.service
-
-# 5. Check status of the controller:
-sudo systemctl status mcs-controller.service</code></pre>
+                    <p>To run this controller automatically on boot as a background service on CachyOS or any Arch-based server, simply execute the installer script:</p>
+                    <pre><code># Run the automated installer script:
+chmod +x install.sh && ./install.sh</code></pre>
+                    <p>The installer will automatically detect your username, home directory, copy all files to the correct server folder, and configure/start the systemd background service.</p>
                 </div>
             </details>
         </footer>
