@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=enis27
-WorkingDirectory=/home/enis27/YAZILIM/minecraftServerController
+WorkingDirectory=/home/enis27/mc_server/controller
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5
