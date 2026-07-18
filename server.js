@@ -6,10 +6,10 @@ const os = require('os');
 const { EventEmitter } = require('events');
 
 const PORT = 8080;
-let SERVER_DIR = path.join(os.homedir(), 'mc_server');
-let LOG_FILE = path.join(SERVER_DIR, 'logs', 'latest.log');
-let JAR_FILE = path.join(SERVER_DIR, 'server.jar');
-let LOCK_FILE = path.join(SERVER_DIR, 'world', 'session.lock');
+const SERVER_DIR = path.join(os.homedir(), 'mc_server');
+const LOG_FILE = path.join(SERVER_DIR, 'logs', 'latest.log');
+const JAR_FILE = path.join(SERVER_DIR, 'server.jar');
+const LOCK_FILE = path.join(SERVER_DIR, 'world', 'session.lock');
 
 // Event emitter for broadcasting logs and status updates to UI clients (SSE)
 const sseBroadcaster = new EventEmitter();
@@ -32,24 +32,10 @@ let simRam = 0;
 // Verify server environment and choose mode
 function initEnvironment() {
   console.log(`Checking Minecraft server directory: ${SERVER_DIR}`);
-  try {
-    if (!fs.existsSync(SERVER_DIR)) {
-      console.log(`Server directory not found. Creating placeholder directory: ${SERVER_DIR}`);
-      fs.mkdirSync(SERVER_DIR, { recursive: true });
-    }
-  } catch (e) {
-    console.warn(`[!] Failed to access/create ${SERVER_DIR}: ${e.message}`);
-    SERVER_DIR = path.join(__dirname, 'mc_server');
-    console.log(`[!] Falling back to local workspace directory: ${SERVER_DIR}`);
-    if (!fs.existsSync(SERVER_DIR)) {
-      fs.mkdirSync(SERVER_DIR, { recursive: true });
-    }
+  if (!fs.existsSync(SERVER_DIR)) {
+    console.log(`Server directory not found. Creating placeholder directory: ${SERVER_DIR}`);
+    fs.mkdirSync(SERVER_DIR, { recursive: true });
   }
-
-  // Recalculate paths based on final SERVER_DIR
-  LOG_FILE = path.join(SERVER_DIR, 'logs', 'latest.log');
-  JAR_FILE = path.join(SERVER_DIR, 'server.jar');
-  LOCK_FILE = path.join(SERVER_DIR, 'world', 'session.lock');
 
   // Create logs directory
   const logsDir = path.join(SERVER_DIR, 'logs');
