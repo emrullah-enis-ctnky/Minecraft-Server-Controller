@@ -438,32 +438,27 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - Multi-core safe calculation supporting values > 100%
+// System CPU usage - Concurrency-locked top command calculation (prevents process pileup)
 let cachedCpuPercent = 1;
+let isTopRunning = false;
 
 function updateExactTopCpu() {
+  if (isTopRunning) return;
+  isTopRunning = true;
+
   const cmd = `LC_ALL=C top -b -n 2 -d 0.2 | grep "Cpu(s)" | tail -n 1 | awk '{print 100 - $8}'`;
   exec(cmd, (err, stdout) => {
+    isTopRunning = false;
     if (!err && stdout && stdout.trim()) {
       const val = parseFloat(stdout.trim());
       if (!isNaN(val)) {
         cachedCpuPercent = Math.max(1, Math.round(val));
-        return;
       }
     }
-    // Process-sum fallback
-    exec('ps aux | awk \'{s+=$3} END {print s}\'', (err2, stdout2) => {
-      if (!err2 && stdout2 && stdout2.trim()) {
-        const val2 = parseFloat(stdout2.trim());
-        if (!isNaN(val2)) {
-          cachedCpuPercent = Math.max(1, Math.round(val2));
-        }
-      }
-    });
   });
 }
 
-setInterval(updateExactTopCpu, 1000);
+setInterval(updateExactTopCpu, 1500);
 updateExactTopCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
