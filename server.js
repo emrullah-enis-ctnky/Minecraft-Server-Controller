@@ -177,18 +177,17 @@ function broadcast(event, data) {
   sseBroadcaster.emit('message', { event, data });
 }
 
-// Append log helper
+// Append log helper (broadcasts to UI without modifying Minecraft's latest.log)
 function addLog(message) {
   const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
   const formattedLog = `[${timestamp}] ${message}`;
   if (isSimulatorMode) {
     simLogHistory.push(formattedLog);
-    if (simLogHistory.length > 500) simLogHistory.shift();
+    if (simLogHistory.length > 300) simLogHistory.shift();
   } else {
-    try {
-      fs.appendFileSync(LOG_FILE, formattedLog + '\n');
-    } catch (e) {
-      console.error('Failed writing to real log file:', e.message);
+    if (Array.isArray(realLogHistory)) {
+      realLogHistory.push(formattedLog);
+      if (realLogHistory.length > 300) realLogHistory.shift();
     }
   }
   broadcast('log', formattedLog);
@@ -261,50 +260,15 @@ function sanitizeLogLine(line) {
   return line.replace(/[\r\n]+/g, ' ').trim();
 }
 
-// Real server: Tail latest.log and stream it
+// Real server: Preload initial log lines
 function startTailLog() {
   if (isSimulatorMode) return;
-  if (activeTailProcess) {
-    try { activeTailProcess.kill(); } catch (e) {}
-  }
-
-  // Load and parse recent log lines first
   try {
     if (fs.existsSync(LOG_FILE)) {
-      const logData = fs.readFileSync(LOG_FILE, 'utf8');
-      const lines = logData.split('\n').filter(Boolean);
-      const lastLines = lines.slice(-60);
-      lastLines.forEach(line => {
-        const clean = sanitizeLogLine(line);
-        if (clean) {
-          broadcast('log', clean);
-          parseLogLineForPlayers(clean);
-        }
-      });
+      const stats = fs.statSync(LOG_FILE);
+      lastLogSize = Math.max(0, stats.size - 20000);
     }
-  } catch (e) {
-    console.error('Could not preload logs:', e.message);
-  }
-
-  // Spawn tail -n 0 -F LOG_FILE
-  if (fs.existsSync(LOG_FILE)) {
-    activeTailProcess = spawn('tail', ['-n', '0', '-F', LOG_FILE]);
-    activeTailProcess.stdout.on('data', (data) => {
-      const chunk = data.toString('utf8');
-      const lines = chunk.split('\n');
-      lines.forEach(line => {
-        const clean = sanitizeLogLine(line);
-        if (clean) {
-          broadcast('log', clean);
-          parseLogLineForPlayers(clean);
-        }
-      });
-    });
-
-    activeTailProcess.on('close', () => {
-      activeTailProcess = null;
-    });
-  }
+  } catch (e) {}
 }
 
 function parseLogLineForPlayers(line) {
