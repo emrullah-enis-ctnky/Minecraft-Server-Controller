@@ -662,14 +662,28 @@ function getMemoryFlags() {
         const jarName = getJarFilename();
         const memFlags = getMemoryFlags();
         const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java ${memFlags} -jar ${jarName} nogui`;
-        exec(startCmd, (err) => {
+        addLog(`[System/INFO]: Executing start command: ${startCmd}`);
+        
+        exec(startCmd, (err, stdout, stderr) => {
           if (err) {
+            addLog(`[System/ERROR]: Start failed: ${err.message}`);
+            if (stderr) addLog(`[System/ERROR]: stderr: ${stderr}`);
             serverStatus = 'stopped';
             broadcast('status_change', { status: serverStatus });
             res.writeHead(500);
             return res.end(JSON.stringify({ success: false, error: err.message }));
           }
+          addLog('[System/INFO]: Screen session started. Waiting for Java to initialize...');
           startTailLog();
+          
+          // Give Java 3 seconds to boot, then re-check status
+          setTimeout(() => {
+            checkRealServerStatus(newStatus => {
+              serverStatus = newStatus;
+              broadcast('status_change', { status: serverStatus });
+            });
+          }, 3000);
+          
           res.writeHead(200);
           res.end(JSON.stringify({ success: true, message: 'Server start command initiated.' }));
         });
