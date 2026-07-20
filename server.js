@@ -438,63 +438,56 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - active ticks delta + system load average calculation
+// System CPU usage - btop's exact C++ Linux CPU calculation algorithm (sampled every 500ms)
 let cachedCpuPercent = 0;
-let lastCpuSample = null;
+let prevBtopSample = null;
 
-function getProcStatCpu() {
+function getBtopExactCpu() {
   try {
     const data = fs.readFileSync('/proc/stat', 'utf8');
     const firstLine = data.split('\n')[0];
     const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
-    const user = parts[0] || 0;
-    const nice = parts[1] || 0;
+
+    let user = parts[0] || 0;
+    let nice = parts[1] || 0;
     const system = parts[2] || 0;
     const idle = parts[3] || 0;
     const iowait = parts[4] || 0;
     const irq = parts[5] || 0;
     const softirq = parts[6] || 0;
     const steal = parts[7] || 0;
+    const guest = parts[8] || 0;
+    const guest_nice = parts[9] || 0;
 
-    const activeTicks = user + nice + system + irq + softirq + steal + iowait;
-    const totalTicks = activeTicks + idle;
-    return { activeTicks, totalTicks };
-  } catch (e) {
-    return null;
-  }
-}
+    user = Math.max(0, user - guest);
+    nice = Math.max(0, nice - guest_nice);
+    const idle_all = idle + iowait;
+    const system_all = system + irq + softirq;
+    const virt_all = guest + guest_nice;
+    const total = user + nice + system_all + idle_all + steal + virt_all;
 
-function updateProcStatCpu() {
-  const currentSample = getProcStatCpu();
-  let calculatedUsage = 0;
+    if (prevBtopSample && prevBtopSample.total > 0) {
+      const period_total = total - prevBtopSample.total;
+      const period_idle = idle_all - prevBtopSample.idle_all;
+      prevBtopSample = { idle_all, total };
 
-  if (currentSample && lastCpuSample) {
-    const activeDelta = currentSample.activeTicks - lastCpuSample.activeTicks;
-    const totalDelta = currentSample.totalTicks - lastCpuSample.totalTicks;
-    if (totalDelta > 0) {
-      calculatedUsage = Math.round((activeDelta / totalDelta) * 100);
+      if (period_total > 0) {
+        const usage = Math.round(((period_total - period_idle) / period_total) * 100);
+        return Math.max(0, Math.min(100, usage));
+      }
     }
-  }
-
-  // Load average check (guarantees accurate high-load reading when system is busy)
-  try {
-    const load1m = os.loadavg()[0] || 0;
-    const cores = os.cpus().length || 1;
-    const loadPercent = Math.round((load1m / cores) * 100);
-    calculatedUsage = Math.max(calculatedUsage, Math.min(100, loadPercent));
+    prevBtopSample = { idle_all, total };
   } catch (e) {}
-
-  cachedCpuPercent = Math.max(0, Math.min(100, calculatedUsage));
-
-  if (currentSample) {
-    lastCpuSample = currentSample;
-  }
+  return cachedCpuPercent;
 }
 
-setInterval(updateProcStatCpu, 1000);
-updateProcStatCpu();
+// 500ms btop sampling interval
+setInterval(() => {
+  cachedCpuPercent = getBtopExactCpu();
+}, 500);
+cachedCpuPercent = getBtopExactCpu();
 
-// Broadcast stats over SSE every 1.5s (reads cached value only)
+// Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
   const sysMem = getSystemMemory();
   broadcast('stats', {
@@ -502,7 +495,7 @@ setInterval(() => {
     ram: sysMem.usedGb,
     totalRam: sysMem.totalGb
   });
-}, 1500);
+}, 500);
 
 // Native Node.js real-time log file poller (250ms stream interval)
 let lastLogSize = -1;
