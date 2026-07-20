@@ -572,14 +572,15 @@ function pollLogFile() {
 setInterval(pollLogFile, 250);
 
 // Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
+// Broadcast stats over SSE every 1.5s (reads cached value only)
 setInterval(() => {
   const sysMem = getSystemMemory();
   broadcast('stats', {
-    cpu: systemCpuPercent,
+    cpu: cachedCpuPercent,
     ram: sysMem.usedGb,
     totalRam: sysMem.totalGb
   });
-}, 1000);
+}, 1500);
 
 // Calculate total and used system memory dynamically
 function getSystemMemory() {
@@ -589,6 +590,18 @@ function getSystemMemory() {
   const totalGb = (totalBytes / (1024 * 1024 * 1024)).toFixed(1);
   const usedGb = (usedBytes / (1024 * 1024 * 1024)).toFixed(2);
   return { usedGb: parseFloat(usedGb), totalGb: parseFloat(totalGb) };
+}
+
+// Dynamically optimize Java RAM flags based on system total memory
+function getMemoryFlags() {
+  const totalGb = os.totalmem() / (1024 * 1024 * 1024);
+  if (totalGb <= 4.5) {
+    return '-Xms1G -Xmx2G -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50';
+  } else if (totalGb <= 8.5) {
+    return '-Xms2G -Xmx3G -XX:+UseG1GC';
+  } else {
+    return '-Xms2G -Xmx4G -XX:+UseG1GC';
+  }
 }
 
 // API Route: Server Status
@@ -646,20 +659,6 @@ function getSystemMemory() {
         serverStatus = 'starting';
         broadcast('status_change', { status: serverStatus });
         
-// Dynamically optimize Java RAM flags based on system total memory
-function getMemoryFlags() {
-  const totalGb = os.totalmem() / (1024 * 1024 * 1024);
-  if (totalGb <= 4.5) {
-    // Low RAM system (3.6GB RAM): allocate max 2GB to Minecraft Java with G1GC memory optimization flags
-    return '-Xms1G -Xmx2G -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50';
-  } else if (totalGb <= 8.5) {
-    return '-Xms2G -Xmx3G -XX:+UseG1GC';
-  } else {
-    return '-Xms2G -Xmx4G -XX:+UseG1GC';
-  }
-}
-
-// Command to start paperMC in screen with optimized memory flags
         const jarName = getJarFilename();
         const memFlags = getMemoryFlags();
         const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java ${memFlags} -jar ${jarName} nogui`;
