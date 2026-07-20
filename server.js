@@ -438,8 +438,49 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - Disabled per user request (Zero CPU overhead)
+// System CPU usage - User's exact /proc/stat delta math formula (Pure Node.js, 0 subprocesses, 0 lag)
 let cachedCpuPercent = 0;
+let lastCpuStatSample = null;
+
+function calculateUserProcStatCpu() {
+  try {
+    if (!fs.existsSync('/proc/stat')) return;
+    const data = fs.readFileSync('/proc/stat', 'utf8');
+    const firstLine = data.split('\n')[0];
+    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
+
+    // parts: user(0), nice(1), system(2), idle(3), iowait(4), irq(5), softirq(6), steal(7)
+    const user = parts[0] || 0;
+    const nice = parts[1] || 0;
+    const system = parts[2] || 0;
+    const idle = parts[3] || 0;
+    const iowait = parts[4] || 0;
+    const irq = parts[5] || 0;
+    const softirq = parts[6] || 0;
+    const steal = parts[7] || 0;
+
+    // t = user + nice + system + idle + iowait + irq + softirq + steal
+    const t = user + nice + system + idle + iowait + irq + softirq + steal;
+    // idl = idle + iowait
+    const idl = idle + iowait;
+
+    if (lastCpuStatSample && lastCpuStatSample.t > 0) {
+      const dt = t - lastCpuStatSample.t;
+      const di = idl - lastCpuStatSample.idl;
+
+      if (dt > 0) {
+        // usage = (1 - (di / dt)) * 100
+        const rawUsage = Math.round((1 - (di / dt)) * 100);
+        cachedCpuPercent = Math.max(0, Math.min(100, rawUsage));
+      }
+    }
+    lastCpuStatSample = { t, idl };
+  } catch (e) {}
+}
+
+// 1-second clean sampling interval (0 subprocesses spawned)
+setInterval(calculateUserProcStatCpu, 1000);
+calculateUserProcStatCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
