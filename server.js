@@ -479,7 +479,7 @@ function handleApiRequest(req, res) {
   }
 
 // Calculate overall system-wide CPU usage percentage via /proc/stat
-let systemCpuPercent = 0;
+let systemCpuPercent = 5;
 let prevProcStat = null;
 
 function updateSystemCpuUsage() {
@@ -487,35 +487,25 @@ function updateSystemCpuUsage() {
     const data = fs.readFileSync('/proc/stat', 'utf8');
     const line = data.split('\n')[0];
     const parts = line.trim().split(/\s+/).slice(1).map(Number);
-    const idle = parts[3] + (parts[4] || 0);
-    const total = parts.reduce((a, b) => a + b, 0);
+    if (parts.length >= 4) {
+      const idle = parts[3] + (parts[4] || 0);
+      const total = parts.reduce((a, b) => a + b, 0);
 
-    if (prevProcStat) {
-      const idleDiff = idle - prevProcStat.idle;
-      const totalDiff = total - prevProcStat.total;
-      if (totalDiff > 0) {
-        systemCpuPercent = Math.max(1, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
-      }
-    }
-    prevProcStat = { idle, total };
-  } catch (e) {
-    const cpus = os.cpus();
-    let idle = 0;
-    let total = 0;
-    if (cpus && cpus.length > 0) {
-      cpus.forEach(core => {
-        for (const t in core.times) total += core.times[t];
-        idle += core.times.idle;
-      });
-      if (prevProcStat) {
+      if (prevProcStat && prevProcStat.total > 0) {
         const idleDiff = idle - prevProcStat.idle;
         const totalDiff = total - prevProcStat.total;
         if (totalDiff > 0) {
-          systemCpuPercent = Math.max(1, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+          const rawUsage = Math.max(1, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+          systemCpuPercent = Math.round(systemCpuPercent * 0.4 + rawUsage * 0.6);
         }
+      } else {
+        const firstUsage = Math.max(1, Math.min(100, Math.round((1 - idle / total) * 100)));
+        systemCpuPercent = firstUsage > 0 ? firstUsage : 5;
       }
       prevProcStat = { idle, total };
     }
+  } catch (e) {
+    systemCpuPercent = 5;
   }
 }
 
@@ -569,15 +559,13 @@ setInterval(pollLogFile, 300);
 
 // Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
 setInterval(() => {
-  if (!isSimulatorMode) {
-    const sysMem = getSystemMemory();
-    broadcast('stats', {
-      cpu: systemCpuPercent,
-      ram: sysMem.usedGb,
-      totalRam: sysMem.totalGb
-    });
-  }
-}, 1500);
+  const sysMem = getSystemMemory();
+  broadcast('stats', {
+    cpu: systemCpuPercent,
+    ram: sysMem.usedGb,
+    totalRam: sysMem.totalGb
+  });
+}, 1000);
 
 // Calculate total and used system memory dynamically
 function getSystemMemory() {
@@ -594,14 +582,9 @@ function getSystemMemory() {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
         const sysMem = getSystemMemory();
-        let cpu = systemCpuPercent;
-        let ram = sysMem.usedGb;
-        let totalRam = sysMem.totalGb;
-
-        if (isSimulatorMode) {
-          cpu = simCpu;
-          ram = simRam;
-        }
+        const cpu = systemCpuPercent;
+        const ram = sysMem.usedGb;
+        const totalRam = sysMem.totalGb;
 
         res.writeHead(200);
         res.end(JSON.stringify({
