@@ -474,25 +474,49 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - top command calculation using 100 - idle formula (matches btop/htop 100% accurately)
+// System CPU usage - 1-second /proc/stat delta ticker (exact btop/htop kernel sampling method)
 let cachedCpuPercent = 1;
+let lastCpuSample = null;
 
-function updateTopCpu() {
-  exec(`top -bn1 | grep "%Cpu(s)"`, (err, stdout) => {
-    if (!err && stdout) {
-      const match = stdout.match(/([\d[.,]+)\s*id/);
-      if (match && match[1]) {
-        const idleVal = parseFloat(match[1].replace(',', '.'));
-        if (!isNaN(idleVal)) {
-          cachedCpuPercent = Math.max(1, Math.min(100, Math.round(100 - idleVal)));
-        }
-      }
-    }
-  });
+function getProcStatCpu() {
+  try {
+    const data = fs.readFileSync('/proc/stat', 'utf8');
+    const firstLine = data.split('\n')[0];
+    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
+    const user = parts[0] || 0;
+    const nice = parts[1] || 0;
+    const system = parts[2] || 0;
+    const idle = parts[3] || 0;
+    const iowait = parts[4] || 0;
+    const irq = parts[5] || 0;
+    const softirq = parts[6] || 0;
+    const steal = parts[7] || 0;
+
+    const idleTicks = idle + iowait;
+    const totalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
+    return { idleTicks, totalTicks };
+  } catch (e) {
+    return null;
+  }
 }
 
-setInterval(updateTopCpu, 1500);
-updateTopCpu();
+function updateProcStatCpu() {
+  const currentSample = getProcStatCpu();
+  if (currentSample && lastCpuSample) {
+    const idleDelta = currentSample.idleTicks - lastCpuSample.idleTicks;
+    const totalDelta = currentSample.totalTicks - lastCpuSample.totalTicks;
+    if (totalDelta > 0) {
+      const usage = Math.round(((totalDelta - idleDelta) / totalDelta) * 100);
+      cachedCpuPercent = Math.max(1, Math.min(100, usage));
+    }
+  }
+  if (currentSample) {
+    lastCpuSample = currentSample;
+  }
+}
+
+setInterval(updateProcStatCpu, 1000);
+updateProcStatCpu();
 
 // Broadcast stats over SSE every 1.5s (reads cached value only)
 setInterval(() => {
