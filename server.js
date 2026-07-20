@@ -478,34 +478,47 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Calculate overall system-wide CPU usage percentage via ps aux process summation
-function getSystemCpuPercentage(callback) {
-  exec('ps aux --no-headers', (err, stdout) => {
-    if (err || !stdout) return callback(2);
-    const lines = stdout.trim().split('\n');
-    let sumCpu = 0;
-    for (const line of lines) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length > 2) {
-        const cpuVal = parseFloat(parts[2]) || 0;
-        sumCpu += cpuVal;
-      }
+// Calculate overall system-wide CPU usage percentage via native os.cpus() tick delta
+let prevCpuTimes = null;
+
+function getInstantSystemCpu() {
+  const cpus = os.cpus();
+  if (!cpus || cpus.length === 0) return 1;
+
+  let idle = 0;
+  let total = 0;
+
+  for (let i = 0; i < cpus.length; i++) {
+    const times = cpus[i].times;
+    for (const type in times) {
+      total += times[type];
     }
-    const cores = os.cpus().length || 1;
-    const normalizedCpu = Math.max(1, Math.min(100, Math.round(sumCpu / cores)));
-    callback(normalizedCpu);
-  });
+    idle += times.idle;
+  }
+
+  if (prevCpuTimes) {
+    const idleDiff = idle - prevCpuTimes.idle;
+    const totalDiff = total - prevCpuTimes.total;
+    prevCpuTimes = { idle, total };
+
+    if (totalDiff > 0) {
+      const usage = Math.round(((totalDiff - idleDiff) / totalDiff) * 100);
+      return Math.max(1, Math.min(100, usage));
+    }
+  }
+
+  prevCpuTimes = { idle, total };
+  return 1;
 }
 
 // Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
 setInterval(() => {
-  getSystemCpuPercentage(cpu => {
-    const sysMem = getSystemMemory();
-    broadcast('stats', {
-      cpu,
-      ram: sysMem.usedGb,
-      totalRam: sysMem.totalGb
-    });
+  const cpu = getInstantSystemCpu();
+  const sysMem = getSystemMemory();
+  broadcast('stats', {
+    cpu,
+    ram: sysMem.usedGb,
+    totalRam: sysMem.totalGb
   });
 }, 1000);
 
@@ -580,24 +593,23 @@ function getSystemMemory() {
   if (pathname === '/api/server/status' && req.method === 'GET') {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
-        getSystemCpuPercentage(cpu => {
-          const sysMem = getSystemMemory();
-          const ram = sysMem.usedGb;
-          const totalRam = sysMem.totalGb;
+        const cpu = getInstantSystemCpu();
+        const sysMem = getSystemMemory();
+        const ram = sysMem.usedGb;
+        const totalRam = sysMem.totalGb;
 
-          res.writeHead(200);
-          res.end(JSON.stringify({
-            status,
-            simulatorMode: isSimulatorMode,
-            localIp: getLocalIP(),
-            tailscaleIp,
-            port: 19132,
-            cpu,
-            ram,
-            totalRam,
-            activePlayers: Array.from(activePlayers)
-          }));
-        });
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          status,
+          simulatorMode: isSimulatorMode,
+          localIp: getLocalIP(),
+          tailscaleIp,
+          port: 19132,
+          cpu,
+          ram,
+          totalRam,
+          activePlayers: Array.from(activePlayers)
+        }));
       });
     });
   }
