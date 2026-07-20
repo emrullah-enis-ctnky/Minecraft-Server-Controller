@@ -194,10 +194,28 @@ function addLog(message) {
 
 // Check real screen or java process status
 function checkRealServerStatus(callback) {
-  // Strictly match Java Minecraft processes (java.*nogui, java.*.jar) or screen session mcsunucu
-  exec('pgrep -f "java.*nogui" || pgrep -f "java.*\\.jar" || screen -ls | grep mcsunucu', (err, stdout) => {
-    const isRunning = Boolean(stdout && stdout.trim());
-    if (isRunning) {
+  exec('ps -eo comm,args --no-headers', (err, stdout) => {
+    let foundMinecraft = false;
+    if (!err && stdout) {
+      const lines = stdout.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx === -1) continue;
+        const comm = trimmed.substring(0, spaceIdx);
+        const args = trimmed.substring(spaceIdx + 1);
+
+        if (comm.includes('java')) {
+          if (args.includes('nogui') || args.includes('server.jar') || args.includes('paper') || args.includes('spigot') || args.includes('fabric') || args.includes('forge') || args.includes('mc_server')) {
+            foundMinecraft = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (foundMinecraft) {
       if (serverStatus === 'stopped') {
         serverStatus = 'running';
       }
@@ -759,30 +777,46 @@ const server = http.createServer((req, res) => {
   if (pathname === '/api/logs') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
       'Access-Control-Allow-Origin': '*'
     });
+    if (res.flushHeaders) res.flushHeaders();
+    if (res.socket) res.socket.setNoDelay(true);
 
     // Write initial connection success with proper SSE event format
-    res.write('retry: 5000\n');
+    res.write('retry: 3000\n');
     res.write(`event: connected\ndata: ${JSON.stringify({ mode: isSimulatorMode ? 'Simulator' : 'Production' })}\n\n`);
 
-    // Stream past mock logs if simulator
+    // Stream recent logs to the newly connected browser immediately
     if (isSimulatorMode && simLogHistory.length > 0) {
       simLogHistory.forEach(log => {
         res.write(`event: log\ndata: ${log}\n\n`);
       });
+    } else if (fs.existsSync(LOG_FILE)) {
+      try {
+        const logContent = fs.readFileSync(LOG_FILE, 'utf8');
+        const lines = logContent.split('\n').filter(Boolean);
+        const recentLines = lines.slice(-60);
+        recentLines.forEach(line => {
+          res.write(`event: log\ndata: ${line}\n\n`);
+        });
+      } catch (e) {}
     }
 
     const onMessage = (msg) => {
-      res.write(`event: ${msg.event}\ndata: ${typeof msg.data === 'object' ? JSON.stringify(msg.data) : msg.data}\n\n`);
+      try {
+        res.write(`event: ${msg.event}\ndata: ${typeof msg.data === 'object' ? JSON.stringify(msg.data) : msg.data}\n\n`);
+      } catch (e) {}
     };
 
-    // Keep-alive ping interval to prevent SSE disconnects
+    // Keep-alive ping interval every 5s to prevent SSE disconnects
     const pingInterval = setInterval(() => {
-      res.write(':keepalive-ping\n\n');
-    }, 10000);
+      try {
+        res.write(':keepalive-ping\n\n');
+      } catch (e) {}
+    }, 5000);
 
     // Listen to logs
     sseBroadcaster.on('message', onMessage);
@@ -790,7 +824,7 @@ const server = http.createServer((req, res) => {
     req.on('close', () => {
       clearInterval(pingInterval);
       sseBroadcaster.off('message', onMessage);
-      res.end();
+      try { res.end(); } catch (e) {}
     });
     return;
   }
