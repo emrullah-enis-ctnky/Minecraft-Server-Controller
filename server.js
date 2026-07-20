@@ -438,37 +438,23 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - User's exact /proc/loadavg formula (load1m * 100 / nproc)
+// System CPU usage - User's exact LC_ALL=C top command formula
 let cachedCpuPercent = 1;
 
-function getProcLoadavgCpu() {
-  try {
-    const data = fs.readFileSync('/proc/loadavg', 'utf8');
-    const parts = data.trim().split(/\s+/);
-    if (parts.length > 0) {
-      const load1m = parseFloat(parts[0]);
-      const cores = os.cpus().length || 1;
-      if (!isNaN(load1m)) {
-        const usage = Math.round((load1m * 100) / cores);
-        return Math.max(1, Math.min(100, usage));
+function updateExactTopCpu() {
+  const cmd = `LC_ALL=C top -b -n 2 -d 0.2 | grep "Cpu(s)" | tail -n 1 | awk '{print 100 - $8}'`;
+  exec(cmd, (err, stdout) => {
+    if (!err && stdout && stdout.trim()) {
+      const val = parseFloat(stdout.trim());
+      if (!isNaN(val)) {
+        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
       }
     }
-  } catch (e) {}
-
-  try {
-    const load1m = os.loadavg()[0] || 0;
-    const cores = os.cpus().length || 1;
-    return Math.max(1, Math.min(100, Math.round((load1m * 100) / cores)));
-  } catch (e) {}
-
-  return 1;
+  });
 }
 
-// Update cached CPU every 500ms
-setInterval(() => {
-  cachedCpuPercent = getProcLoadavgCpu();
-}, 500);
-cachedCpuPercent = getProcLoadavgCpu();
+setInterval(updateExactTopCpu, 1000);
+updateExactTopCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
