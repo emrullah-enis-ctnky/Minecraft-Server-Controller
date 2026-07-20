@@ -438,7 +438,7 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - User's exact LC_ALL=C top command formula
+// System CPU usage - Multi-core safe calculation supporting values > 100%
 let cachedCpuPercent = 1;
 
 function updateExactTopCpu() {
@@ -447,9 +447,19 @@ function updateExactTopCpu() {
     if (!err && stdout && stdout.trim()) {
       const val = parseFloat(stdout.trim());
       if (!isNaN(val)) {
-        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
+        cachedCpuPercent = Math.max(1, Math.round(val));
+        return;
       }
     }
+    // Process-sum fallback
+    exec('ps aux | awk \'{s+=$3} END {print s}\'', (err2, stdout2) => {
+      if (!err2 && stdout2 && stdout2.trim()) {
+        const val2 = parseFloat(stdout2.trim());
+        if (!isNaN(val2)) {
+          cachedCpuPercent = Math.max(1, Math.round(val2));
+        }
+      }
+    });
   });
 }
 

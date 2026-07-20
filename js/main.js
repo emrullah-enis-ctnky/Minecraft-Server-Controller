@@ -182,8 +182,9 @@ function updateStatusUI(status) {
 }
 
 function updateStatsUI(cpu, ram, totalRam) {
-    cpuValue.textContent = `${cpu}%`;
-    cpuBar.style.width = `${cpu}%`;
+    const safeCpu = typeof cpu === 'number' && !isNaN(cpu) ? cpu : 0;
+    cpuValue.textContent = `${safeCpu}%`;
+    cpuBar.style.width = `${Math.min(100, Math.max(0, safeCpu))}%`;
     
     const maxRam = totalRam || 16;
     ramValue.textContent = `${ram} / ${maxRam} GB`;
