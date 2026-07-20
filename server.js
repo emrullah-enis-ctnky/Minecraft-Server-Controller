@@ -438,8 +438,8 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - 1-second /proc/stat delta ticker (exact btop/htop kernel sampling method)
-let cachedCpuPercent = 1;
+// System CPU usage - active ticks delta + system load average calculation
+let cachedCpuPercent = 0;
 let lastCpuSample = null;
 
 function getProcStatCpu() {
@@ -456,9 +456,9 @@ function getProcStatCpu() {
     const softirq = parts[6] || 0;
     const steal = parts[7] || 0;
 
-    const idleTicks = idle + iowait;
-    const totalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
-    return { idleTicks, totalTicks };
+    const activeTicks = user + nice + system + irq + softirq + steal + iowait;
+    const totalTicks = activeTicks + idle;
+    return { activeTicks, totalTicks };
   } catch (e) {
     return null;
   }
@@ -466,14 +466,26 @@ function getProcStatCpu() {
 
 function updateProcStatCpu() {
   const currentSample = getProcStatCpu();
+  let calculatedUsage = 0;
+
   if (currentSample && lastCpuSample) {
-    const idleDelta = currentSample.idleTicks - lastCpuSample.idleTicks;
+    const activeDelta = currentSample.activeTicks - lastCpuSample.activeTicks;
     const totalDelta = currentSample.totalTicks - lastCpuSample.totalTicks;
     if (totalDelta > 0) {
-      const usage = Math.round(((totalDelta - idleDelta) / totalDelta) * 100);
-      cachedCpuPercent = Math.max(1, Math.min(100, usage));
+      calculatedUsage = Math.round((activeDelta / totalDelta) * 100);
     }
   }
+
+  // Load average check (guarantees accurate high-load reading when system is busy)
+  try {
+    const load1m = os.loadavg()[0] || 0;
+    const cores = os.cpus().length || 1;
+    const loadPercent = Math.round((load1m / cores) * 100);
+    calculatedUsage = Math.max(calculatedUsage, Math.min(100, loadPercent));
+  } catch (e) {}
+
+  cachedCpuPercent = Math.max(0, Math.min(100, calculatedUsage));
+
   if (currentSample) {
     lastCpuSample = currentSample;
   }
