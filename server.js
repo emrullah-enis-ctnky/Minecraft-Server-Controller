@@ -194,9 +194,11 @@ function addLog(message) {
 }
 
 // Check real server status via screen session detection (proven reliable method)
+const screenEnv = { ...process.env, HOME: os.homedir(), TERM: 'xterm' };
+
 function checkRealServerStatus(callback) {
   // First wipe dead sessions, then check for live mcsunucu
-  exec('screen -wipe > /dev/null 2>&1; screen -ls 2>&1', (err, stdout) => {
+  exec('screen -wipe > /dev/null 2>&1; screen -ls 2>&1', { env: screenEnv }, (err, stdout) => {
     const output = (stdout || '') + (err && err.stdout ? err.stdout : '');
     // Check each line for mcsunucu - but ignore Dead sessions
     const lines = output.split('\n');
@@ -652,35 +654,40 @@ function getMemoryFlags() {
         serverStatus = 'starting';
         broadcast('status_change', { status: serverStatus });
         
-        // Wipe any dead screen sessions before starting
-        exec('screen -wipe > /dev/null 2>&1', () => {});
-        
         const jarName = getJarFilename();
-        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java -Xms1G -Xmx2G -jar ${jarName} nogui`;
-        addLog(`[System/INFO]: Executing: ${startCmd}`);
+        const homeDir = os.homedir();
+        // screen needs HOME and TERM env vars to work under systemd
+        const envSetup = `HOME=${homeDir} TERM=xterm`;
+        const wipeCmd = `${envSetup} screen -wipe > /dev/null 2>&1; true`;
+        const startCmd = `${envSetup} screen -dmS mcsunucu java -Xms1G -Xmx2G -jar ${jarName} nogui`;
         
-        exec(startCmd, (err, stdout, stderr) => {
-          if (err) {
-            addLog(`[System/ERROR]: Start failed: ${err.message}`);
-            if (stderr) addLog(`[System/ERROR]: stderr: ${stderr}`);
-            serverStatus = 'stopped';
-            broadcast('status_change', { status: serverStatus });
-            res.writeHead(500);
-            return res.end(JSON.stringify({ success: false, error: err.message }));
-          }
-          addLog('[System/INFO]: Screen session started. Waiting for Java to initialize...');
-          startTailLog();
-          
-          // Give Java 3 seconds to boot, then re-check status
-          setTimeout(() => {
-            checkRealServerStatus(newStatus => {
-              serverStatus = newStatus;
+        addLog(`[System/INFO]: Executing: cd ${SERVER_DIR} && ${startCmd}`);
+        
+        // Wipe dead sessions first, then start
+        exec(wipeCmd, { cwd: SERVER_DIR }, () => {
+          exec(startCmd, { cwd: SERVER_DIR, env: { ...process.env, HOME: homeDir, TERM: 'xterm' } }, (err, stdout, stderr) => {
+            if (err) {
+              addLog(`[System/ERROR]: Start failed: ${err.message}`);
+              if (stderr) addLog(`[System/ERROR]: stderr: ${stderr}`);
+              serverStatus = 'stopped';
               broadcast('status_change', { status: serverStatus });
-            });
-          }, 3000);
-          
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true, message: 'Server start command initiated.' }));
+              res.writeHead(500);
+              return res.end(JSON.stringify({ success: false, error: err.message }));
+            }
+            addLog('[System/INFO]: Screen session started. Waiting for Java to initialize...');
+            startTailLog();
+            
+            // Give Java 3 seconds to boot, then re-check status
+            setTimeout(() => {
+              checkRealServerStatus(newStatus => {
+                serverStatus = newStatus;
+                broadcast('status_change', { status: serverStatus });
+              });
+            }, 3000);
+            
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: true, message: 'Server start command initiated.' }));
+          });
         });
       });
     }
