@@ -474,15 +474,18 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - top command calculation
+// System CPU usage - top command calculation using 100 - idle formula (matches btop/htop 100% accurately)
 let cachedCpuPercent = 1;
 
 function updateTopCpu() {
-  exec(`top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}'`, (err, stdout) => {
-    if (!err && stdout && stdout.trim()) {
-      const val = parseFloat(stdout.trim().replace(',', '.'));
-      if (!isNaN(val)) {
-        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
+  exec(`top -bn1 | grep "%Cpu(s)"`, (err, stdout) => {
+    if (!err && stdout) {
+      const match = stdout.match(/([\d[.,]+)\s*id/);
+      if (match && match[1]) {
+        const idleVal = parseFloat(match[1].replace(',', '.'));
+        if (!isNaN(idleVal)) {
+          cachedCpuPercent = Math.max(1, Math.min(100, Math.round(100 - idleVal)));
+        }
       }
     }
   });
