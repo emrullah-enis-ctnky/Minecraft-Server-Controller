@@ -666,6 +666,7 @@ btnBanAdd.onclick = () => executePlayerAction('/api/server/players/ban');
 loadInitialState();
 fetchLogHistory();
 connectSSE();
-// Periodically refresh state & stats
-setInterval(loadInitialState, 3000);
-setInterval(refreshPlayers, 10000);
+// Periodically refresh state, logs & stats
+setInterval(loadInitialState, 2000);
+setInterval(fetchLogHistory, 1500);
+setInterval(refreshPlayers, 8000);

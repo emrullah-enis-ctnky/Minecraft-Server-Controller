@@ -479,8 +479,9 @@ function handleApiRequest(req, res) {
   }
 
 // Calculate overall system-wide CPU usage percentage via /proc/stat
-let systemCpuPercent = 5;
+let systemCpuPercent = 0;
 let prevProcStat = null;
+let realLogHistory = [];
 
 function updateSystemCpuUsage() {
   try {
@@ -495,33 +496,31 @@ function updateSystemCpuUsage() {
         const idleDiff = idle - prevProcStat.idle;
         const totalDiff = total - prevProcStat.total;
         if (totalDiff > 0) {
-          const rawUsage = Math.max(1, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
-          systemCpuPercent = Math.round(systemCpuPercent * 0.4 + rawUsage * 0.6);
+          systemCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
         }
       } else {
-        const firstUsage = Math.max(1, Math.min(100, Math.round((1 - idle / total) * 100)));
-        systemCpuPercent = firstUsage > 0 ? firstUsage : 5;
+        systemCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idle / total) * 100)));
       }
       prevProcStat = { idle, total };
     }
   } catch (e) {
-    systemCpuPercent = 5;
+    systemCpuPercent = 0;
   }
 }
 
 setInterval(updateSystemCpuUsage, 1000);
 updateSystemCpuUsage();
 
-// Native Node.js real-time log file poller (300ms stream interval)
+// Native Node.js real-time log file poller (250ms stream interval)
 let lastLogSize = -1;
 
 function pollLogFile() {
-  if (isSimulatorMode || !fs.existsSync(LOG_FILE)) return;
+  if (!fs.existsSync(LOG_FILE)) return;
   try {
     const stats = fs.statSync(LOG_FILE);
     if (lastLogSize === -1) {
-      // First run: set offset to recent 10KB to stream existing/new logs immediately
-      lastLogSize = Math.max(0, stats.size - 10000);
+      // First run: set offset to start reading current file tail
+      lastLogSize = Math.max(0, stats.size - 20000);
     }
     if (stats.size > lastLogSize) {
       const startPos = lastLogSize;
@@ -544,6 +543,8 @@ function pollLogFile() {
         lines.forEach(line => {
           const clean = sanitizeLogLine(line);
           if (clean) {
+            realLogHistory.push(clean);
+            if (realLogHistory.length > 400) realLogHistory.shift();
             broadcast('log', clean);
             parseLogLineForPlayers(clean);
           }
@@ -555,7 +556,7 @@ function pollLogFile() {
   } catch (e) {}
 }
 
-setInterval(pollLogFile, 300);
+setInterval(pollLogFile, 250);
 
 // Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
 setInterval(() => {
