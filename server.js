@@ -522,17 +522,16 @@ function updateSystemCpuUsage() {
 setInterval(updateSystemCpuUsage, 1000);
 updateSystemCpuUsage();
 
-// Native Node.js real-time log file poller (500ms stream interval)
-let lastLogSize = 0;
+// Native Node.js real-time log file poller (300ms stream interval)
+let lastLogSize = -1;
 
 function pollLogFile() {
   if (isSimulatorMode || !fs.existsSync(LOG_FILE)) return;
   try {
     const stats = fs.statSync(LOG_FILE);
-    if (lastLogSize === 0) {
-      // First run: sync offset to current size
-      lastLogSize = stats.size;
-      return;
+    if (lastLogSize === -1) {
+      // First run: set offset to recent 10KB to stream existing/new logs immediately
+      lastLogSize = Math.max(0, stats.size - 10000);
     }
     if (stats.size > lastLogSize) {
       const startPos = lastLogSize;
@@ -566,7 +565,19 @@ function pollLogFile() {
   } catch (e) {}
 }
 
-setInterval(pollLogFile, 500);
+setInterval(pollLogFile, 300);
+
+// Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
+setInterval(() => {
+  if (!isSimulatorMode) {
+    const sysMem = getSystemMemory();
+    broadcast('stats', {
+      cpu: systemCpuPercent,
+      ram: sysMem.usedGb,
+      totalRam: sysMem.totalGb
+    });
+  }
+}, 1500);
 
 // Calculate total and used system memory dynamically
 function getSystemMemory() {
@@ -928,7 +939,8 @@ const server = http.createServer((req, res) => {
     // Stream recent logs to the newly connected browser immediately
     if (isSimulatorMode && simLogHistory.length > 0) {
       simLogHistory.forEach(log => {
-        res.write(`event: log\ndata: ${log}\n\n`);
+        const clean = sanitizeLogLine(log);
+        if (clean) res.write(`event: log\ndata: ${clean}\n\n`);
       });
     } else if (fs.existsSync(LOG_FILE)) {
       try {
@@ -936,7 +948,8 @@ const server = http.createServer((req, res) => {
         const lines = logContent.split('\n').filter(Boolean);
         const recentLines = lines.slice(-60);
         recentLines.forEach(line => {
-          res.write(`event: log\ndata: ${line}\n\n`);
+          const clean = sanitizeLogLine(line);
+          if (clean) res.write(`event: log\ndata: ${clean}\n\n`);
         });
       } catch (e) {}
     }
