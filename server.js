@@ -438,28 +438,47 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - Concurrency-locked top command calculation (prevents process pileup)
+// Native Linux /proc/stat CPU reader (Zero sub-processes spawned, zero pileup, 100% accurate)
 let cachedCpuPercent = 1;
-let isTopRunning = false;
+let prevProcStat = null;
 
-function updateExactTopCpu() {
-  if (isTopRunning) return;
-  isTopRunning = true;
+function updateNativeProcCpu() {
+  try {
+    const data = fs.readFileSync('/proc/stat', 'utf8');
+    const firstLine = data.split('\n')[0];
+    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
 
-  const cmd = `LC_ALL=C top -b -n 2 -d 0.2 | grep "Cpu(s)" | tail -n 1 | awk '{print 100 - $8}'`;
-  exec(cmd, (err, stdout) => {
-    isTopRunning = false;
-    if (!err && stdout && stdout.trim()) {
-      const val = parseFloat(stdout.trim());
-      if (!isNaN(val)) {
-        cachedCpuPercent = Math.max(1, Math.round(val));
+    const user = parts[0] || 0;
+    const nice = parts[1] || 0;
+    const system = parts[2] || 0;
+    const idle = parts[3] || 0;
+    const iowait = parts[4] || 0;
+    const irq = parts[5] || 0;
+    const softirq = parts[6] || 0;
+    const steal = parts[7] || 0;
+
+    const total = user + nice + system + idle + iowait + irq + softirq + steal;
+    const idleTime = idle + iowait;
+
+    if (prevProcStat && prevProcStat.total > 0) {
+      const totalDiff = total - prevProcStat.total;
+      const idleDiff = idleTime - prevProcStat.idleTime;
+
+      if (totalDiff > 0) {
+        const cores = os.cpus().length || 1;
+        // Calculate instant percentage across cores
+        const usageRatio = (totalDiff - idleDiff) / totalDiff;
+        // Normalized 0-100% usage (multi-core aggregate)
+        const usagePercent = Math.round(usageRatio * 100);
+        cachedCpuPercent = Math.max(1, Math.min(100, usagePercent));
       }
     }
-  });
+    prevProcStat = { total, idleTime };
+  } catch (e) {}
 }
 
-setInterval(updateExactTopCpu, 1500);
-updateExactTopCpu();
+setInterval(updateNativeProcCpu, 500);
+updateNativeProcCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
