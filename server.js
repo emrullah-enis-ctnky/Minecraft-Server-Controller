@@ -5,6 +5,15 @@ const { exec, spawn } = require('child_process');
 const os = require('os');
 const { EventEmitter } = require('events');
 
+// Global exception safety handlers to ensure Node main thread NEVER crashes
+process.on('uncaughtException', (err) => {
+  console.error('[System/ERROR] Uncaught Exception:', err ? err.stack || err.message : err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[System/ERROR] Unhandled Rejection:', reason);
+});
+
 const PORT = 8080;
 const SERVER_DIR = path.dirname(__dirname);
 const LOG_FILE = path.join(SERVER_DIR, 'logs', 'latest.log');
@@ -500,16 +509,7 @@ function pollLogFile() {
 
 setInterval(pollLogFile, 250);
 
-// Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
-// Broadcast stats over SSE every 1.5s (reads cached value only)
-setInterval(() => {
-  const sysMem = getSystemMemory();
-  broadcast('stats', {
-    cpu: cachedCpuPercent,
-    ram: sysMem.usedGb,
-    totalRam: sysMem.totalGb
-  });
-}, 1500);
+// Native Node.js real-time log file poller (250ms stream interval)
 
 // Calculate total and used system memory dynamically
 function getSystemMemory() {
