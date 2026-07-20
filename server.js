@@ -29,6 +29,20 @@ let simLogHistory = [];
 let simCpu = 0;
 let simRam = 0;
 
+// Helper: Find actual server JAR name
+function getJarFilename() {
+  try {
+    if (fs.existsSync(SERVER_DIR)) {
+      const files = fs.readdirSync(SERVER_DIR);
+      const jar = files.find(f => f.endsWith('.jar') && (f.startsWith('server') || f.startsWith('paper') || f.startsWith('spigot') || f.startsWith('purpur')));
+      if (jar) return jar;
+      const anyJar = files.find(f => f.endsWith('.jar'));
+      if (anyJar) return anyJar;
+    }
+  } catch (e) {}
+  return 'server.jar';
+}
+
 // Verify server environment and choose mode
 function initEnvironment() {
   console.log(`Checking Minecraft server directory: ${SERVER_DIR}`);
@@ -43,20 +57,20 @@ function initEnvironment() {
     fs.mkdirSync(logsDir, { recursive: true });
   }
 
-  // Create latest.log if not exists
-  if (!fs.existsSync(LOG_FILE)) {
-    fs.writeFileSync(LOG_FILE, '');
-  }
+  // Check if real Minecraft server exists (if latest.log exists OR jar exists OR properties exist)
+  const hasLog = fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > 0;
+  const jarName = getJarFilename();
+  const hasJar = fs.existsSync(path.join(SERVER_DIR, jarName));
+  const hasProperties = fs.existsSync(path.join(SERVER_DIR, 'server.properties'));
 
-  // Check if real PaperMC server jar exists
-  if (!fs.existsSync(JAR_FILE)) {
-    isSimulatorMode = true;
-    console.warn(`\n[!] server.jar not found at ${JAR_FILE}.\n[!] Running in SIMULATOR MODE for demonstration.\n`);
-    loadMockData();
-  } else {
+  if (hasLog || hasJar || hasProperties) {
     isSimulatorMode = false;
-    console.log(`[+] server.jar found. Running in PRODUCTION mode.`);
+    console.log(`[+] Real Minecraft server files detected at ${SERVER_DIR}. Running in PRODUCTION mode.`);
     loadRealData();
+  } else {
+    isSimulatorMode = true;
+    console.warn(`\n[!] Real server files not found at ${SERVER_DIR}.\n[!] Running in SIMULATOR MODE for demonstration.\n`);
+    loadMockData();
   }
 }
 
@@ -178,18 +192,21 @@ function addLog(message) {
   broadcast('log', formattedLog);
 }
 
-// Check real screen process status
+// Check real screen or java process status
 function checkRealServerStatus(callback) {
-  if (isSimulatorMode) {
-    return callback(serverStatus);
-  }
-  exec('screen -ls | grep mcsunucu', (err, stdout) => {
-    if (stdout && stdout.includes('mcsunucu')) {
+  exec('pgrep -f java || screen -ls | grep mcsunucu', (err, stdout) => {
+    const isRunning = Boolean(stdout && stdout.trim());
+    if (isRunning) {
       if (serverStatus === 'stopped' || serverStatus === 'stopping') {
         serverStatus = 'running';
       }
+      if (isSimulatorMode) {
+        isSimulatorMode = false;
+        loadRealData();
+        startTailLog();
+      }
     } else {
-      if (serverStatus === 'running' || serverStatus === 'starting') {
+      if (!isSimulatorMode && serverStatus !== 'starting') {
         serverStatus = 'stopped';
       }
     }
@@ -197,40 +214,65 @@ function checkRealServerStatus(callback) {
   });
 }
 
+// Get real process CPU and RAM metrics
+function getRealProcessMetrics(callback) {
+  if (isSimulatorMode || serverStatus === 'stopped') {
+    return callback(0, 0);
+  }
+  exec('ps -C java -o %cpu,rss --no-headers', (err, stdout) => {
+    if (err || !stdout.trim()) {
+      return callback(0, 0);
+    }
+    const lines = stdout.trim().split('\n');
+    let totalCpu = 0;
+    let totalRssKb = 0;
+    lines.forEach(l => {
+      const parts = l.trim().split(/\s+/);
+      totalCpu += parseFloat(parts[0]) || 0;
+      totalRssKb += parseInt(parts[1]) || 0;
+    });
+    const ramGb = (totalRssKb / (1024 * 1024)).toFixed(2);
+    callback(Math.round(totalCpu), ramGb);
+  });
+}
+
 // Real server: Tail latest.log and stream it
 function startTailLog() {
   if (isSimulatorMode) return;
   if (activeTailProcess) {
-    activeTailProcess.kill();
+    try { activeTailProcess.kill(); } catch (e) {}
   }
 
   // Load last 50 lines first
   try {
-    const logData = fs.readFileSync(LOG_FILE, 'utf8');
-    const lines = logData.split('\n').filter(Boolean);
-    const lastLines = lines.slice(-50);
-    lastLines.forEach(line => broadcast('log', line));
+    if (fs.existsSync(LOG_FILE)) {
+      const logData = fs.readFileSync(LOG_FILE, 'utf8');
+      const lines = logData.split('\n').filter(Boolean);
+      const lastLines = lines.slice(-50);
+      lastLines.forEach(line => broadcast('log', line));
+    }
   } catch (e) {
     console.error('Could not preload logs:', e.message);
   }
 
-  // Spawn tail
-  activeTailProcess = spawn('tail', ['-f', LOG_FILE]);
-  activeTailProcess.stdout.on('data', (data) => {
-    const chunk = data.toString();
-    const lines = chunk.split('\n');
-    lines.forEach(line => {
-      if (line.trim()) {
-        broadcast('log', line);
-        // Track joins/leaves dynamically from real logs
-        parseLogLineForPlayers(line);
-      }
+  // Spawn tail -n 0 -f LOG_FILE
+  if (fs.existsSync(LOG_FILE)) {
+    activeTailProcess = spawn('tail', ['-n', '0', '-f', LOG_FILE]);
+    activeTailProcess.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      const lines = chunk.split('\n');
+      lines.forEach(line => {
+        if (line.trim()) {
+          broadcast('log', line);
+          parseLogLineForPlayers(line);
+        }
+      });
     });
-  });
 
-  activeTailProcess.on('close', () => {
-    activeTailProcess = null;
-  });
+    activeTailProcess.on('close', () => {
+      activeTailProcess = null;
+    });
+  }
 }
 
 function parseLogLineForPlayers(line) {
@@ -404,29 +446,24 @@ function handleApiRequest(req, res) {
   if (pathname === '/api/server/status' && req.method === 'GET') {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
-        let cpu = 0;
-        let ram = 0;
-        
-        if (isSimulatorMode) {
-          cpu = simCpu;
-          ram = simRam;
-        } else {
-          // In real mode, run ps command if running
-          // (Mock CPU/RAM calculations based on real java process)
-          // Just to make it quick, if running let's get actual CPU/RAM of Java if possible
-        }
+        getRealProcessMetrics((cpu, ram) => {
+          if (isSimulatorMode) {
+            cpu = simCpu;
+            ram = simRam;
+          }
 
-        res.writeHead(200);
-        res.end(JSON.stringify({
-          status,
-          simulatorMode: isSimulatorMode,
-          localIp: getLocalIP(),
-          tailscaleIp,
-          port: 19132,
-          cpu,
-          ram,
-          activePlayers: Array.from(activePlayers)
-        }));
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            status,
+            simulatorMode: isSimulatorMode,
+            localIp: getLocalIP(),
+            tailscaleIp,
+            port: 19132,
+            cpu,
+            ram,
+            activePlayers: Array.from(activePlayers)
+          }));
+        });
       });
     });
   }
@@ -447,7 +484,8 @@ function handleApiRequest(req, res) {
         broadcast('status_change', { status: serverStatus });
         
         // Command to start paperMC in screen
-        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java -Xmx4G -Xms4G -jar server.jar nogui`;
+        const jarName = getJarFilename();
+        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java -Xmx4G -Xms4G -jar ${jarName} nogui`;
         exec(startCmd, (err) => {
           if (err) {
             serverStatus = 'stopped';
@@ -728,11 +766,11 @@ const server = http.createServer((req, res) => {
       'Access-Control-Allow-Origin': '*'
     });
 
-    // Write initial connection success
+    // Write initial connection success with proper SSE event format
     res.write('retry: 5000\n');
-    res.write(`data: ${JSON.stringify({ event: 'connected', mode: isSimulatorMode ? 'Simulator' : 'Production' })}\n\n`);
+    res.write(`event: connected\ndata: ${JSON.stringify({ mode: isSimulatorMode ? 'Simulator' : 'Production' })}\n\n`);
 
-    // Stream past mock log logs if simulator
+    // Stream past mock logs if simulator
     if (isSimulatorMode && simLogHistory.length > 0) {
       simLogHistory.forEach(log => {
         res.write(`event: log\ndata: ${log}\n\n`);
@@ -743,10 +781,16 @@ const server = http.createServer((req, res) => {
       res.write(`event: ${msg.event}\ndata: ${typeof msg.data === 'object' ? JSON.stringify(msg.data) : msg.data}\n\n`);
     };
 
+    // Keep-alive ping interval to prevent SSE disconnects
+    const pingInterval = setInterval(() => {
+      res.write(':keepalive-ping\n\n');
+    }, 10000);
+
     // Listen to logs
     sseBroadcaster.on('message', onMessage);
 
     req.on('close', () => {
+      clearInterval(pingInterval);
       sseBroadcaster.off('message', onMessage);
       res.end();
     });

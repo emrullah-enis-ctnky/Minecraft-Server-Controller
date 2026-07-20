@@ -173,6 +173,15 @@ function loadInitialState() {
             localIpText.textContent = data.localIp;
             tailscaleIpText.textContent = data.tailscaleIp;
             portText.textContent = data.port;
+            
+            // Set mode badge from status API
+            if (data.simulatorMode) {
+                modeBadge.textContent = 'Simulator Mode';
+                modeBadge.className = 'badge badge-simulator';
+            } else {
+                modeBadge.textContent = 'Production Mode';
+                modeBadge.className = 'badge badge-production';
+            }
             refreshPlayers();
         })
         .catch(err => console.error('Failed fetching status:', err));
@@ -508,5 +517,6 @@ btnBanAdd.onclick = () => executePlayerAction('/api/server/players/ban');
 // BOOTSTRAP
 loadInitialState();
 connectSSE();
-// Periodically refresh players just in case
-setInterval(refreshPlayers, 15000);
+// Periodically refresh state & stats
+setInterval(loadInitialState, 3000);
+setInterval(refreshPlayers, 10000);
