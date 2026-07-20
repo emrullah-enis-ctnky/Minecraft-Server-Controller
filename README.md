@@ -45,7 +45,74 @@ Sistem, işletim sistemi ile Minecraft sunucu süreçleri arasında köprü gör
 
 ---
 
-## 📊 2. RAM ve Sistem Kaynak Optimizasyonu
+## 🛠️ 2. Zero-to-Hero: Sıfırdan Minecraft Cross-Play (`~/mc_server`) Kurulum Rehberi
+
+Eğer bilgisayarınızda henüz kurulmuş bir Minecraft sunucusu yoksa, aşağıdaki adımları takip ederek Bedrock (Mobil/Konsol) ve Java oyuncularının aynı anda girebileceği **Cross-Play sunucusunu (`~/mc_server`)** sıfırdan kurabilirsiniz.
+
+### 1️⃣ Gerekli Sistem Paketlerinin Yüklenmesi
+Terminali açın ve işletim sisteminize uygun komutla Java 21, GNU Screen ve temel araçları yükleyin:
+
+* **Arch Linux / CachyOS:**
+  ```bash
+  sudo pacman -S openjdk21-jre screen wget curl
+  ```
+* **Ubuntu / Debian:**
+  ```bash
+  sudo apt update && sudo apt install openjdk-21-jre-headless screen wget curl -y
+  ```
+* **Fedora / RHEL:**
+  ```bash
+  sudo dnf install java-21-openjdk screen wget curl -y
+  ```
+
+### 2️⃣ Sunucu Dizin Yapısının Oluşturulması
+```bash
+mkdir -p ~/mc_server
+cd ~/mc_server
+```
+
+### 3️⃣ PaperMC Sunucu Çekirdeğinin İndirilmesi
+Performansı en yüksek Minecraft Java sunucu çekirdeği olan **PaperMC** indirilir:
+```bash
+wget -O server.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/497/downloads/paper-1.20.4-497.jar
+```
+
+### 4️⃣ Minecraft EULA Lisansının Onaylanması
+Sunucunun açılabilmesi için EULA sözleşmesi kabul edilir:
+```bash
+echo "eula=true" > eula.txt
+```
+
+### 5️⃣ Bedrock ve Java Cross-Play Eklentilerinin (Plugins) Yüklenmesi
+Bedrock (Android, iOS, Xbox, PS, Switch) oyuncularının Java sunucusuna şifresiz/hesapsız bağlanabilmesi için eklenti klasörü oluşturulur ve gerekli `.jar` dosyaları indirilir:
+
+```bash
+mkdir -p ~/mc_server/plugins
+cd ~/mc_server/plugins
+
+# GeyserMC (Bedrock oyuncularını Java protokolüne dönüştüren ana köprü)
+wget -O Geyser-Spigot.jar https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+
+# Floodgate (Bedrock oyuncularının Java hesabı olmadan oyuna girmesini sağlar)
+wget -O Floodgate-Spigot.jar https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
+
+# ViaVersion (Farklı Minecraft istemci sürümlerinin sunucuya girmesini sağlar)
+wget -O ViaVersion.jar https://hangarcdn.papermc.io/plugins/ViaVersion/ViaVersion/versions/4.9.2/PAPER/ViaVersion-4.9.2.jar
+```
+
+### 6️⃣ Sunucunun İlk Çalıştırma Testi
+Yapılandırma dosyalarının ve eklenti klasörlerinin oluşması için sunucuyu bir kez elle başlatıp kapatın:
+```bash
+cd ~/mc_server
+java -Xms1G -Xmx2G -jar server.jar nogui
+```
+*Konsolda `Done` yazısını gördükten sonra `stop` yazıp Enter'a basarak sunucuyu kapatın.*
+
+Artık **`~/mc_server`** altyapınız eksiksiz şekilde hazırdır!
+
+---
+
+## 📊 3. RAM ve Sistem Kaynak Optimizasyonu
 
 Sunucunuzun belleğinin aşırı dolup işletim sisteminin kilitlenmesini önlemek amacıyla `server.js`, sistemdeki toplam RAM miktarını dinamik olarak analiz eder ve Java sanal makinesine (JVM) uygun bellek bayraklarını otomatik enjekte eder:
 
@@ -59,7 +126,7 @@ Sunucunuzun belleğinin aşırı dolup işletim sisteminin kilitlenmesini önlem
 
 ---
 
-## 🔒 3. Güvenlik Duvarı (Firewall / UFW) Yapılandırması
+## 🔒 4. Güvenlik Duvarı (Firewall / UFW) Yapılandırması
 
 Diğer cihazlardan web paneline ve Minecraft sunucusuna erişebilmek için ağ portlarının açılması gerekmektedir:
 
@@ -95,7 +162,7 @@ sudo firewall-cmd --reload
 
 ---
 
-## 🚀 4. Kurulum ve Çalıştırma
+## 🚀 5. Kontrol Paneli Kurulumu ve Çalıştırma
 
 Kontrol paneli, sunucunuzdaki Minecraft dizininin altındaki `controller` klasöründe (`~/mc_server/controller/`) konumlanır.
 
@@ -116,7 +183,7 @@ chmod +x install.sh
 
 ---
 
-## 🌐 5. Kontrol Paneline Erişim
+## 🌐 6. Kontrol Paneline Erişim
 
 Kurulum tamamlandıktan sonra ağınızdaki herhangi bir cihazın tarayıcısından bağlanabilirsiniz:
 
@@ -126,7 +193,7 @@ Kurulum tamamlandıktan sonra ağınızdaki herhangi bir cihazın tarayıcısın
 
 ---
 
-## 🖥️ 6. Oturum ve Tünel Yönetimi (Screen & Kill Protocols)
+## 🖥️ 7. Oturum ve Tünel Yönetimi (Screen & Kill Protocols)
 
 Sunucu `screen -dmS mcsunucu` tünelinde çalışmaktadır. Web kontrol paneli üzerinden veya terminalden şu işlemler gerçekleştirilebilir:
 
@@ -147,7 +214,7 @@ Eğer sunucu kilitlenirse web panelindeki **Force Kill** butonu şu sırayı izl
 
 ---
 
-## ⚙️ 7. Systemd Servis Yönetimi
+## ⚙️ 8. Systemd Servis Yönetimi
 
 Kontrol paneli servisini yönetmek için aşağıdaki komutları kullanabilirsiniz:
 
@@ -167,7 +234,7 @@ sudo journalctl -u mcs-controller.service -f --no-pager
 
 ---
 
-## 📡 8. RESTful API ve SSE Dokümantasyonu
+## 📡 9. RESTful API ve SSE Dokümantasyonu
 
 Backend servisi tarafından sağlanan uç noktalar (Endpoints):
 
@@ -211,7 +278,7 @@ Canlı SSE (Server-Sent Events) veri akışı kanalıdır. `stats`, `log` ve `st
 
 ---
 
-## 🔍 9. Sorun Giderme (Troubleshooting)
+## 🔍 10. Sorun Giderme (Troubleshooting)
 
 ### ❓ 1. Web Paneline Bağlanılamıyor (`EADDRINUSE` veya Bağlantı Reddedildi)
 * **Sebep:** Port 8080 başka bir süreç tarafından kullanılıyor olabilir veya servis çökmüştür.
