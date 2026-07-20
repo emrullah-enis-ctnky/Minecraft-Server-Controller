@@ -673,8 +673,10 @@ function getMemoryFlags() {
       serverStatus = 'stopping';
       broadcast('status_change', { status: serverStatus });
       
-      const killCmd = 'pkill -9 -f java || killall -9 java || true; screen -wipe > /dev/null 2>&1 || true; pkill -9 -f "screen.*mcsunucu" || true; screen -wipe > /dev/null 2>&1 || true';
-      exec(killCmd, () => {
+      const homeDir = os.homedir();
+      const envSetup = `HOME=${homeDir} TERM=xterm`;
+      const killCmd = `${envSetup} screen -X -S mcsunucu quit > /dev/null 2>&1 || true; pkill -9 -f java || killall -9 java || true; pkill -9 -f "mcsunucu" || true; ${envSetup} screen -wipe > /dev/null 2>&1 || true`;
+      exec(killCmd, { env: { ...process.env, HOME: homeDir, TERM: 'xterm' } }, () => {
         serverStatus = 'stopped';
         broadcast('status_change', { status: serverStatus });
         if (activeTailProcess) {
