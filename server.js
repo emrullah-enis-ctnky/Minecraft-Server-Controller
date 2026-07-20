@@ -193,30 +193,14 @@ function addLog(message) {
   broadcast('log', formattedLog);
 }
 
-// Check real screen or java process status
+// Check real server status via screen session detection (proven reliable method)
 function checkRealServerStatus(callback) {
-  exec('ps -eo comm,args --no-headers', (err, stdout) => {
-    let foundMinecraft = false;
-    if (!err && stdout) {
-      const lines = stdout.split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const spaceIdx = trimmed.indexOf(' ');
-        if (spaceIdx === -1) continue;
-        const comm = trimmed.substring(0, spaceIdx);
-        const args = trimmed.substring(spaceIdx + 1);
-
-        if (comm.includes('java')) {
-          if (args.includes('nogui') || args.includes('server.jar') || args.includes('paper') || args.includes('spigot') || args.includes('fabric') || args.includes('forge') || args.includes('mc_server')) {
-            foundMinecraft = true;
-            break;
-          }
-        }
-      }
-    }
-
-    if (foundMinecraft) {
+  // Primary check: does the screen session "mcsunucu" exist?
+  exec('screen -ls', (err, stdout) => {
+    const screenOutput = (stdout || '') + (err && err.message ? err.message : '');
+    const hasScreen = screenOutput.includes('mcsunucu');
+    
+    if (hasScreen) {
       if (serverStatus === 'stopped' || serverStatus === 'starting') {
         serverStatus = 'running';
         broadcast('status_change', { status: serverStatus });
@@ -229,6 +213,7 @@ function checkRealServerStatus(callback) {
     } else {
       if (serverStatus !== 'starting') {
         serverStatus = 'stopped';
+        broadcast('status_change', { status: serverStatus });
       }
     }
     callback(serverStatus);
