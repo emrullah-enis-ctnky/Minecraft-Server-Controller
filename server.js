@@ -469,20 +469,22 @@ function calculateUserProcStatCpu() {
       const di = idl - lastCpuStatSample.idl;
 
       if (dt > 0) {
-        // usage = (1 - (di / dt)) * 100
-        const usageRatio = Math.max(0, Math.min(1, 1 - (di / dt)));
+        // usage = ((dt - di) / dt) * 100
+        const usageRatio = Math.max(0, Math.min(1, (dt - di) / dt));
         const rawUsage = Math.round(usageRatio * 100);
         cachedCpuPercent = Math.max(1, Math.min(100, rawUsage));
       }
+    } else if (t > 0) {
+      // First run estimate
+      const usageRatio = Math.max(0, Math.min(1, (t - idl) / t));
+      cachedCpuPercent = Math.max(1, Math.min(100, Math.round(usageRatio * 100)));
     }
     lastCpuStatSample = { t, idl };
   } catch (e) {}
 }
 
-// Initial sample right at boot
-calculateUserProcStatCpu();
-setTimeout(calculateUserProcStatCpu, 150);
 setInterval(calculateUserProcStatCpu, 1000);
+calculateUserProcStatCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
