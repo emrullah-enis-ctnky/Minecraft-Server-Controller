@@ -195,12 +195,20 @@ function addLog(message) {
 
 // Check real server status via screen session detection (proven reliable method)
 function checkRealServerStatus(callback) {
-  // Primary check: does the screen session "mcsunucu" exist?
-  exec('screen -ls', (err, stdout) => {
-    const screenOutput = (stdout || '') + (err && err.message ? err.message : '');
-    const hasScreen = screenOutput.includes('mcsunucu');
+  // First wipe dead sessions, then check for live mcsunucu
+  exec('screen -wipe > /dev/null 2>&1; screen -ls 2>&1', (err, stdout) => {
+    const output = (stdout || '') + (err && err.stdout ? err.stdout : '');
+    // Check each line for mcsunucu - but ignore Dead sessions
+    const lines = output.split('\n');
+    let hasLiveScreen = false;
+    for (const line of lines) {
+      if (line.includes('mcsunucu') && !line.toLowerCase().includes('dead')) {
+        hasLiveScreen = true;
+        break;
+      }
+    }
     
-    if (hasScreen) {
+    if (hasLiveScreen) {
       if (serverStatus === 'stopped' || serverStatus === 'starting') {
         serverStatus = 'running';
         broadcast('status_change', { status: serverStatus });
@@ -644,10 +652,12 @@ function getMemoryFlags() {
         serverStatus = 'starting';
         broadcast('status_change', { status: serverStatus });
         
+        // Wipe any dead screen sessions before starting
+        exec('screen -wipe > /dev/null 2>&1', () => {});
+        
         const jarName = getJarFilename();
-        const memFlags = getMemoryFlags();
-        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java ${memFlags} -jar ${jarName} nogui`;
-        addLog(`[System/INFO]: Executing start command: ${startCmd}`);
+        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java -Xms1G -Xmx2G -jar ${jarName} nogui`;
+        addLog(`[System/INFO]: Executing: ${startCmd}`);
         
         exec(startCmd, (err, stdout, stderr) => {
           if (err) {
