@@ -478,49 +478,51 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Calculate overall system-wide CPU usage percentage via native os.cpus() tick delta
-let prevCpuTimes = null;
+// System CPU usage - single background updater, cached value read by all consumers
+let cachedCpuPercent = 0;
+let _prevIdle = 0;
+let _prevTotal = 0;
+let _cpuInitialized = false;
 
-function getInstantSystemCpu() {
+function _sampleCpuTicks() {
   const cpus = os.cpus();
-  if (!cpus || cpus.length === 0) return 1;
-
-  let idle = 0;
-  let total = 0;
-
-  for (let i = 0; i < cpus.length; i++) {
-    const times = cpus[i].times;
-    for (const type in times) {
-      total += times[type];
-    }
-    idle += times.idle;
+  let idle = 0, total = 0;
+  for (const cpu of cpus) {
+    idle += cpu.times.idle;
+    for (const t in cpu.times) total += cpu.times[t];
   }
-
-  if (prevCpuTimes) {
-    const idleDiff = idle - prevCpuTimes.idle;
-    const totalDiff = total - prevCpuTimes.total;
-    prevCpuTimes = { idle, total };
-
-    if (totalDiff > 0) {
-      const usage = Math.round(((totalDiff - idleDiff) / totalDiff) * 100);
-      return Math.max(1, Math.min(100, usage));
-    }
-  }
-
-  prevCpuTimes = { idle, total };
-  return 1;
+  return { idle, total };
 }
 
-// Continuous live stats broadcast over SSE (CPU, RAM, Total RAM)
+// Initialize first sample immediately
+(function initCpu() {
+  const s = _sampleCpuTicks();
+  _prevIdle = s.idle;
+  _prevTotal = s.total;
+  _cpuInitialized = true;
+})();
+
+// Update cached CPU every 2 seconds (single writer, no consumer conflict)
 setInterval(() => {
-  const cpu = getInstantSystemCpu();
+  const s = _sampleCpuTicks();
+  const idleDelta = s.idle - _prevIdle;
+  const totalDelta = s.total - _prevTotal;
+  _prevIdle = s.idle;
+  _prevTotal = s.total;
+  if (totalDelta > 0) {
+    cachedCpuPercent = Math.max(0, Math.min(100, Math.round(((totalDelta - idleDelta) / totalDelta) * 100)));
+  }
+}, 2000);
+
+// Broadcast stats over SSE every 1.5s (reads cached value only)
+setInterval(() => {
   const sysMem = getSystemMemory();
   broadcast('stats', {
-    cpu,
+    cpu: cachedCpuPercent,
     ram: sysMem.usedGb,
     totalRam: sysMem.totalGb
   });
-}, 1000);
+}, 1500);
 
 // Native Node.js real-time log file poller (250ms stream interval)
 let lastLogSize = -1;
@@ -593,7 +595,7 @@ function getSystemMemory() {
   if (pathname === '/api/server/status' && req.method === 'GET') {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
-        const cpu = getInstantSystemCpu();
+        const cpu = cachedCpuPercent;
         const sysMem = getSystemMemory();
         const ram = sysMem.usedGb;
         const totalRam = sysMem.totalGb;
