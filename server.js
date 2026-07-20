@@ -311,16 +311,16 @@ function startTailLog() {
 }
 
 function parseLogLineForPlayers(line) {
-  // Support standard Java joins, entity IDs, UUIDs, Geyser logins, and disconnects
-  if (line.includes('joined the game') || line.includes('logged in with entity id') || line.includes('UUID of player')) {
-    let match = line.match(/(?:INFO\]:|UUID of player)\s+([A-Za-z0-9_*]+)/);
-    if (!match) match = line.match(/([A-Za-z0-9_*]+)\[\/[\d\.:]+\]\s+logged in/);
-    if (match && match[1] && !match[1].startsWith('Server') && !match[1].startsWith('Geyser') && match[1] !== 'Paper') {
+  const reserved = ['UUID', 'Server', 'Geyser', 'Paper', 'ViaVersion', 'Floodgate', 'System', 'INFO', 'WARN', 'ERROR', 'ThreadedAnvilChunkStorage', 'ChunkHolderManager'];
+  
+  if (line.includes('joined the game')) {
+    const match = line.match(/([A-Za-z0-9_*]{2,16})(?:\[\/[\d\.:]+\])?\s+joined the game/);
+    if (match && match[1] && !reserved.includes(match[1])) {
       activePlayers.add(match[1]);
       broadcast('status_update', { activePlayers: Array.from(activePlayers) });
     }
-  } else if (line.includes('left the game') || line.includes('lost connection') || line.includes('disconnected')) {
-    let match = line.match(/(?:INFO\]:|\s+)([A-Za-z0-9_*]+)\s+(?:left the game|lost connection|disconnected)/);
+  } else if (line.includes('left the game') || line.includes('lost connection')) {
+    const match = line.match(/([A-Za-z0-9_*]{2,16})\s+(?:left the game|lost connection)/);
     if (match && match[1]) {
       activePlayers.delete(match[1]);
       broadcast('status_update', { activePlayers: Array.from(activePlayers) });
