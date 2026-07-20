@@ -12,7 +12,8 @@ Sistem, güvenlik ve performans odaklı iki ana katmandan oluşur:
 * **Hafif ve Bağımsız:** Herhangi bir dış kütüphane veya npm paketi (`express`, `socket.io` vb.) kullanmaz. Sadece yerleşik Node.js modülleri (`http`, `fs`, `child_process`, `os`) ile çalışır.
 * **Canlı Veri Akışı (SSE):** Sunucu loglarını ve performans verilerini tarayıcıya sıfır gecikmeyle aktarmak için **Server-Sent Events (SSE)** teknolojisini kullanır.
 * **Güvenli Screen Entegrasyonu:** Minecraft sunucusu arka planda bağımsız bir `screen` tünelinde (`mcsunucu`) çalışır. Kontrol paneli bu tünele dışarıdan komut gönderir (`screen -X stuff`), böylece java çökse bile panel çalışmaya devam eder.
-* **Akıllı IP Tespiti:** Sistemdeki Docker veya sanal makinelerin yarattığı sanal ağları es geçerek gerçek **Yerel Ağ IP**'sini ve aktifse **Tailscale VPN IP**'sini otomatik olarak bulur.
+* **Tüm Ağ Arayüzlerini Dinleme (`0.0.0.0`):** Web sunucusu `0.0.0.0:8080` portundan yayın yapar. Bu sayede hem yerel ağ (LAN) hem de Tailscale VPN IP'leri üzerinden gelen bağlantıları kabul eder.
+* **Akıllı IP Tespiti:** Sistemdeki Docker veya sanal makinelerin yarattığı sanal ağları es geçerek gerçek **Yerel Ağ IP**'sini (`192.168.x.x`) ve aktifse **Tailscale VPN IP**'sini (`100.x.x.x`) otomatik olarak bulur.
 * **Simülatör Modu:** Eğer sunucuda Minecraft dosyaları henüz kurulu değilse, panel otomatik olarak bir simülasyon başlatır. Bu sayede tüm arayüzü, log ekranını ve oyuncu yönetimini kurmadan önce test edebilirsiniz.
 
 ### Frontend (Ön Yüz - Vanilla Stack)
@@ -22,7 +23,35 @@ Sistem, güvenlik ve performans odaklı iki ana katmandan oluşur:
 
 ---
 
-## 🚀 2. Kurulum ve Çalıştırma
+## 🔒 2. ÖNEMLİ: Güvenlik Duvarı (Firewall / UFW) İzinleri
+
+CachyOS / Arch Linux veya Ubuntu gibi sistemlerde güvenlik duvarı dışarıdan gelen bağlantıları engeller. Kontrol paneline diğer cihazlarınızdan erişebilmek için gerekli portlara izin vermeniz gerekir.
+
+### **UFW Kullanıyorsanız (Önerilen):**
+Sunucunuzda terminali açıp şu komutları sırasıyla çalıştırın:
+```bash
+# Web Kontrol Paneli Portu (TCP)
+sudo ufw allow 8080/tcp
+
+# Bedrock / Geyser Minecraft Portları (UDP ve TCP)
+sudo ufw allow 19132/udp
+sudo ufw allow 19132/tcp
+
+# Güvenlik duvarını yenileyin
+sudo ufw reload
+```
+
+### **Firewalld Kullanıyorsanız:**
+```bash
+sudo firewall-cmd --add-port=8080/tcp --permanent
+sudo firewall-cmd --add-port=19132/udp --permanent
+sudo firewall-cmd --add-port=19132/tcp --permanent
+sudo firewall-cmd --reload
+```
+
+---
+
+## 🚀 3. Kurulum ve Çalıştırma
 
 Kontrol panelinin dosyaları, sunucunuzdaki Minecraft klasörünün altında açılacak bağımsız bir `controller` klasöründe (`~/mc_server/controller/`) yer alır. Böylece sunucu dosyalarınız ile panel dosyaları birbirine karışmaz.
 
@@ -35,59 +64,51 @@ chmod +x install.sh && ./install.sh
 
 ### Yöntem B: Manuel Kurulum
 1. `~/mc_server/` dizini altında `controller` adında bir klasör oluşturun ve tüm proje dosyalarını (`server.js`, `index.html`, `css/`, `js/`) bu klasörün içine kopyalayın.
-2. Aşağıdaki komutla paneli doğrudan başlatabilirsiniz:
+2. Paneli doğrudan çalıştırmak için:
    ```bash
    cd ~/mc_server/controller
    node server.js
    ```
-3. Tarayıcınızdan şu adrese girerek panele erişin:
-   * **Yerel Ağ:** `http://<sunucu-yerel-ip>:8080`
-   * **Tailscale:** `http://<sunucu-tailscale-ip>:8080`
 
 ---
 
-## ⚙️ 3. Systemd Servis Entegrasyonu (7/24 Çalışma)
+## 🌐 4. Kontrol Paneline Erişim
 
-Kontrol panelinin sunucu her açıldığında arka planda otomatik olarak başlamasını istiyorsanız:
+Kurulum tamamlandıktan ve güvenlik duvarı izni verildikten sonra diğer cihazlarınızın (telefon, bilgisayar, tablet) tarayıcısından panele girebilirsiniz:
 
-1. `mcs-controller.service` dosyasını sistem servis dizinine kopyalayın:
-   ```bash
-   sudo cp ~/mc_server/controller/mcs-controller.service /etc/systemd/system/mcs-controller.service
-   ```
-2. Servisleri güncelleyip aktifleştirin:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable mcs-controller.service
-   sudo systemctl start mcs-controller.service
-   ```
-3. Servisin durumunu kontrol etmek için:
-   ```bash
-   sudo systemctl status mcs-controller.service
-   ```
+* **Yerel Ağ (LAN) Üzerinden:** `http://<SUNUCU_YEREL_IP>:8080` (Örn: `http://192.168.1.50:8080`)
+* **Tailscale VPN Üzerinden:** `http://<TAILSCALE_IP>:8080` (Örn: `http://100.82.140.45:8080`)
+
+> Sunucunuzun IP adreslerini öğrenmek için terminalde `hostname -I` (Yerel IP) veya `tailscale ip -4` (VPN IP) komutlarını kullanabilirsiniz.
 
 ---
 
-## 📝 4. Kullanılan Temel Sunucu Komutları
+## ⚙️ 5. Systemd Servis Yönetimi (7/24 Çalışma)
 
-Panel arka planda Minecraft sunucusu ile etkileşime girerken aşağıdaki komutları kullanır:
+Kontrol paneli arka planda bir Systemd servisi olarak çalışır. Servisi yönetmek için şu komutları kullanabilirsiniz:
 
-* **Sunucuyu Başlatma:** Detached screen modunda PaperMC başlatılır.
+* **Servis Durumunu Kontrol Etme:**
   ```bash
-  cd ~/mc_server && screen -dmS mcsunucu java -Xmx4G -Xms4G -jar server.jar nogui
+  sudo systemctl status mcs-controller.service
   ```
-* **Konsola Komut Gönderme:** Stuff özelliği ile tünel içerisine komut yazdırılır.
+* **Servisi Yeniden Başlatma:**
   ```bash
-  screen -S mcsunucu -X stuff "stop\n"
+  sudo systemctl restart mcs-controller.service
   ```
-* **Tailscale IP Alma:** IPv4 Tailscale adresi sorgulanır.
+* **Servis Loglarını Canlı İzleme:**
   ```bash
-  tailscale ip -4
+  journalctl -u mcs-controller.service -f
   ```
-* **Zorla Kapatma (Force Kill):** Sunucu donarsa java işlemi sonlandırılır ve screen temizlenir.
-  ```bash
-  killall -9 java && screen -wipe
-  ```
-* **Harita Kilidi Çözme:** Sunucu ani kapandığında kilitlenen dünya kilidi kaldırılır.
-  ```bash
-  rm -f ~/mc_server/world/session.lock
-  ```
+
+---
+
+## 🔍 6. Sorun Giderme (Troubleshooting)
+
+Eğer başka bir cihazdan arayüze bağlanamıyorsanız:
+
+1. **Servisin Çalıştığını Doğrulayın:**
+   `sudo systemctl status mcs-controller.service` komutuyla servisin `active (running)` durumda olduğunu kontrol edin.
+2. **Portun Dinlendiğini Doğrulayın:**
+   `ss -tulpn | grep 8080` çıktısında `0.0.0.0:8080` veya `*:8080` ibaresini görün.
+3. **Güvenlik Duvarını Geçici Olarak Kapatıp Test Edin:**
+   Erişim engeli devam ediyorsa `sudo ufw disable` yaparak sorunun güvenlik duvarından kaynaklanıp kaynaklanmadığını teyit edin.
