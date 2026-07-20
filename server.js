@@ -674,8 +674,9 @@ function getMemoryFlags() {
       broadcast('status_change', { status: serverStatus });
       
       const homeDir = os.homedir();
+      const userName = os.userInfo().username || 'enis27';
       const envSetup = `HOME=${homeDir} TERM=xterm`;
-      const killCmd = `${envSetup} screen -X -S mcsunucu quit > /dev/null 2>&1 || true; pkill -9 -f java || killall -9 java || true; pkill -9 -f "mcsunucu" || true; ${envSetup} screen -wipe > /dev/null 2>&1 || true`;
+      const killCmd = `${envSetup} screen -X -S mcsunucu quit > /dev/null 2>&1 || true; pkill -9 -f java || killall -9 java || true; pkill -9 -f "mcsunucu" || true; rm -rf /run/screen/S-${userName}/*mcsunucu* /tmp/uscreens/*mcsunucu* ${homeDir}/.screen/*mcsunucu* > /dev/null 2>&1 || true; ${envSetup} screen -wipe > /dev/null 2>&1 || true`;
       exec(killCmd, { env: { ...process.env, HOME: homeDir, TERM: 'xterm' } }, () => {
         serverStatus = 'stopped';
         broadcast('status_change', { status: serverStatus });
