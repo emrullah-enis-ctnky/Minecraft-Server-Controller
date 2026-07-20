@@ -76,7 +76,8 @@ sudo systemctl daemon-reload
 echo "[*] Enabling mcs-controller service..."
 sudo systemctl enable mcs-controller.service
 
-echo "[*] Killing leftover orphan top processes..."
+echo "[*] Killing all rogue node controller processes and orphan top processes..."
+pkill -9 -f "node.*server.js" 2>/dev/null || true
 pkill -9 top 2>/dev/null || true
 killall -9 top 2>/dev/null || true
 

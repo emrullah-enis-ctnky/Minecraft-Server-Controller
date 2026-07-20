@@ -438,6 +438,11 @@ function handleApiRequest(req, res) {
     return;
   }
 
+// Startup cleanup: kill any orphan top processes from older node instances
+try {
+  exec('pkill -9 top || killall -9 top > /dev/null 2>&1 || true');
+} catch (e) {}
+
 // System CPU usage - Strict Single-Process Mutex for top command (100% immune to process pileup and btop conflicts)
 let cachedCpuPercent = 1;
 let isTopActive = false;
