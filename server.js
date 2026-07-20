@@ -474,9 +474,6 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - single background updater, cached value read by all consumers
-let cachedCpuPercent = 0;
-let _prevIdle = 0;
 // System CPU usage - top command calculation
 let cachedCpuPercent = 1;
 
