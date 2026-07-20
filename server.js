@@ -478,7 +478,7 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Calculate overall system-wide CPU usage percentage via /proc/stat
+// Calculate overall system-wide CPU usage percentage via official Linux procfs formula
 let systemCpuPercent = 0;
 let prevProcStat = null;
 let realLogHistory = [];
@@ -486,26 +486,37 @@ let realLogHistory = [];
 function updateSystemCpuUsage() {
   try {
     const data = fs.readFileSync('/proc/stat', 'utf8');
-    const line = data.split('\n')[0];
-    const parts = line.trim().split(/\s+/).slice(1).map(Number);
+    const firstLine = data.split('\n')[0];
+    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
     if (parts.length >= 4) {
-      const idle = parts[3] + (parts[4] || 0);
-      const total = parts.reduce((a, b) => a + b, 0);
+      const user = parts[0] || 0;
+      const nice = parts[1] || 0;
+      const system = parts[2] || 0;
+      const idle = parts[3] || 0;
+      const iowait = parts[4] || 0;
+      const irq = parts[5] || 0;
+      const softirq = parts[6] || 0;
+      const steal = parts[7] || 0;
+
+      const totalIdle = idle + iowait;
+      const totalNonIdle = user + nice + system + irq + softirq + steal;
+      const total = totalIdle + totalNonIdle;
 
       if (prevProcStat && prevProcStat.total > 0) {
-        const idleDiff = idle - prevProcStat.idle;
         const totalDiff = total - prevProcStat.total;
+        const idleDiff = totalIdle - prevProcStat.idle;
+        prevProcStat = { idle: totalIdle, total };
+
         if (totalDiff > 0) {
-          systemCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+          const cpuPercent = Math.round(((totalDiff - idleDiff) / totalDiff) * 100);
+          systemCpuPercent = Math.max(0, Math.min(100, cpuPercent));
+          return;
         }
-      } else {
-        systemCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idle / total) * 100)));
       }
-      prevProcStat = { idle, total };
+      prevProcStat = { idle: totalIdle, total };
     }
-  } catch (e) {
-    systemCpuPercent = 0;
-  }
+  } catch (e) {}
+  systemCpuPercent = 0;
 }
 
 setInterval(updateSystemCpuUsage, 1000);
@@ -680,7 +691,8 @@ function getSystemMemory() {
       serverStatus = 'stopping';
       broadcast('status_change', { status: serverStatus });
       
-      exec('pkill -9 -f java || killall -9 java; screen -wipe', () => {
+      const killCmd = 'pkill -9 -f java || killall -9 java || true; screen -wipe > /dev/null 2>&1 || true; pkill -9 -f "screen.*mcsunucu" || true; screen -wipe > /dev/null 2>&1 || true';
+      exec(killCmd, () => {
         serverStatus = 'stopped';
         broadcast('status_change', { status: serverStatus });
         if (activeTailProcess) {

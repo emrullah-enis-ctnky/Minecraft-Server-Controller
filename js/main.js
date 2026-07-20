@@ -23,7 +23,6 @@ const portText = document.getElementById('port-text');
 const btnToggle = document.getElementById('btn-toggle-server');
 const btnToggleText = document.getElementById('btn-toggle-text');
 const btnKill = document.getElementById('btn-kill');
-const btnLock = document.getElementById('btn-lock');
 
 const terminalOutput = document.getElementById('terminal-output');
 const terminalForm = document.getElementById('terminal-form');
@@ -180,7 +179,6 @@ function updateStatusUI(status) {
     }
 
     btnKill.disabled = (status === 'stopped');
-    btnLock.disabled = (status !== 'stopped');
 }
 
 function updateStatsUI(cpu, ram, totalRam) {
@@ -450,18 +448,6 @@ btnKill.onclick = () => {
                 }
             });
     }
-};
-
-btnLock.onclick = () => {
-    btnLock.disabled = true;
-    fetch('/api/server/clearlock', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            alert(data.message);
-        })
-        .finally(() => {
-            btnLock.disabled = false;
-        });
 };
 
 btnClearTerm.onclick = () => {
