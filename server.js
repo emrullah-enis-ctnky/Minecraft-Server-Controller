@@ -439,7 +439,7 @@ function handleApiRequest(req, res) {
   }
 
 // System CPU usage - User's exact /proc/stat delta math formula (Pure Node.js, 0 subprocesses, 0 lag)
-let cachedCpuPercent = 0;
+let cachedCpuPercent = 1;
 let lastCpuStatSample = null;
 
 function calculateUserProcStatCpu() {
@@ -479,9 +479,10 @@ function calculateUserProcStatCpu() {
   } catch (e) {}
 }
 
-// 1-second clean sampling interval (0 subprocesses spawned)
-setInterval(calculateUserProcStatCpu, 1000);
+// Initial sample right at boot
 calculateUserProcStatCpu();
+setTimeout(calculateUserProcStatCpu, 150);
+setInterval(calculateUserProcStatCpu, 1000);
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
