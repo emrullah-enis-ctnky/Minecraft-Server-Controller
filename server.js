@@ -438,15 +438,11 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Hybrid CPU calculation: max of /proc/stat tick delta and /proc/loadavg system load
+// System CPU usage - Pure Linux /proc/stat active execution delta (Standard System Monitor formula)
 let cachedCpuPercent = 1;
 let prevProcStat = null;
 
-function updateHybridCpu() {
-  let statPercent = 0;
-  let loadPercent = 0;
-
-  // 1. /proc/stat calculation
+function updatePureProcCpu() {
   try {
     const data = fs.readFileSync('/proc/stat', 'utf8');
     const firstLine = data.split('\n')[0];
@@ -461,39 +457,24 @@ function updateHybridCpu() {
     const softirq = parts[6] || 0;
     const steal = parts[7] || 0;
 
-    const total = user + nice + system + idle + iowait + irq + softirq + steal;
-    const idleTime = idle + iowait;
+    const active = user + nice + system + irq + softirq + steal;
+    const total = active + idle + iowait;
 
     if (prevProcStat && prevProcStat.total > 0) {
       const totalDiff = total - prevProcStat.total;
-      const idleDiff = idleTime - prevProcStat.idleTime;
+      const activeDiff = active - prevProcStat.active;
+
       if (totalDiff > 0) {
-        statPercent = Math.round(((totalDiff - idleDiff) / totalDiff) * 100);
+        const usage = Math.round((activeDiff / totalDiff) * 100);
+        cachedCpuPercent = Math.max(1, Math.min(100, usage));
       }
     }
-    prevProcStat = { total, idleTime };
+    prevProcStat = { total, active };
   } catch (e) {}
-
-  // 2. /proc/loadavg calculation
-  try {
-    const data = fs.readFileSync('/proc/loadavg', 'utf8');
-    const parts = data.trim().split(/\s+/);
-    if (parts.length > 0) {
-      const load1m = parseFloat(parts[0]);
-      const cores = os.cpus().length || 1;
-      if (!isNaN(load1m)) {
-        loadPercent = Math.round((load1m * 100) / cores);
-      }
-    }
-  } catch (e) {}
-
-  // Take maximum so high load average (e.g. load 5-6) is NEVER missed or reported as 1%
-  const finalCpu = Math.max(statPercent, loadPercent);
-  cachedCpuPercent = Math.max(1, Math.min(100, finalCpu));
 }
 
-setInterval(updateHybridCpu, 500);
-updateHybridCpu();
+setInterval(updatePureProcCpu, 500);
+updatePureProcCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
