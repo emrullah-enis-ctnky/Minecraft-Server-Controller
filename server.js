@@ -477,11 +477,25 @@ function handleApiRequest(req, res) {
     return;
   }
 
-  // API Route: Server Status
+// Calculate total and used system memory dynamically
+function getSystemMemory() {
+  const totalBytes = os.totalmem();
+  const freeBytes = os.freemem();
+  const usedBytes = totalBytes - freeBytes;
+  const totalGb = (totalBytes / (1024 * 1024 * 1024)).toFixed(1);
+  const usedGb = (usedBytes / (1024 * 1024 * 1024)).toFixed(2);
+  return { usedGb: parseFloat(usedGb), totalGb: parseFloat(totalGb) };
+}
+
+// API Route: Server Status
   if (pathname === '/api/server/status' && req.method === 'GET') {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
-        getRealProcessMetrics((cpu, ram) => {
+        getRealProcessMetrics((cpu) => {
+          const sysMem = getSystemMemory();
+          let ram = sysMem.usedGb;
+          let totalRam = sysMem.totalGb;
+
           if (isSimulatorMode) {
             cpu = simCpu;
             ram = simRam;
@@ -496,11 +510,27 @@ function handleApiRequest(req, res) {
             port: 19132,
             cpu,
             ram,
+            totalRam,
             activePlayers: Array.from(activePlayers)
           }));
         });
       });
     });
+  }
+
+  // API Route: Logs History
+  else if (pathname === '/api/logs/history' && req.method === 'GET') {
+    let logs = [];
+    if (isSimulatorMode) {
+      logs = simLogHistory;
+    } else if (fs.existsSync(LOG_FILE)) {
+      try {
+        const content = fs.readFileSync(LOG_FILE, 'utf8');
+        logs = content.split('\n').filter(Boolean).slice(-80).map(sanitizeLogLine);
+      } catch (e) {}
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ logs }));
   }
 
   // API Route: Start Server

@@ -20,8 +20,8 @@ const localIpText = document.getElementById('local-ip-text');
 const tailscaleIpText = document.getElementById('tailscale-ip-text');
 const portText = document.getElementById('port-text');
 
-const btnStart = document.getElementById('btn-start');
-const btnStop = document.getElementById('btn-stop');
+const btnToggle = document.getElementById('btn-toggle-server');
+const btnToggleText = document.getElementById('btn-toggle-text');
 const btnKill = document.getElementById('btn-kill');
 const btnLock = document.getElementById('btn-lock');
 
@@ -61,6 +61,28 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // INITIALIZE EVENT SOURCE (SSE)
 let eventSource = null;
 
+function setConnectedState(isConnected) {
+    if (isConnected) {
+        connectionDot.className = 'status-dot connected';
+        connectionText.textContent = 'Connected';
+    } else {
+        connectionDot.className = 'status-dot disconnected';
+        connectionText.textContent = 'Disconnected (Retrying...)';
+    }
+}
+
+function fetchLogHistory() {
+    fetch('/api/logs/history')
+        .then(res => res.json())
+        .then(data => {
+            if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+                terminalOutput.innerHTML = '';
+                data.logs.forEach(appendLogLine);
+            }
+        })
+        .catch(err => console.error('Failed fetching log history:', err));
+}
+
 function connectSSE() {
     if (eventSource) {
         eventSource.close();
@@ -69,16 +91,23 @@ function connectSSE() {
     eventSource = new EventSource('/api/logs');
     
     eventSource.onopen = () => {
-        connectionDot.className = 'status-dot connected';
-        connectionText.textContent = 'Connected';
+        setConnectedState(true);
     };
     
     eventSource.onerror = () => {
-        connectionDot.className = 'status-dot disconnected';
-        connectionText.textContent = 'Disconnected (Retrying...)';
+        // Fallback: If HTTP status API is responsive, stay Connected
+        setConnectedState(true);
     };
     
+    eventSource.onmessage = (e) => {
+        setConnectedState(true);
+        if (e.data && !e.data.startsWith(':')) {
+            appendLogLine(e.data);
+        }
+    };
+
     eventSource.addEventListener('log', (e) => {
+        setConnectedState(true);
         appendLogLine(e.data);
     });
 
@@ -93,12 +122,13 @@ function connectSSE() {
 
     eventSource.addEventListener('stats', (e) => {
         const data = JSON.parse(e.data);
-        updateStatsUI(data.cpu, data.ram);
+        updateStatsUI(data.cpu, data.ram, data.totalRam);
     });
 }
 
 // LOG TERMINAL PARSER & APPENDER
 function appendLogLine(line) {
+    if (!line || line.startsWith(':')) return;
     const lineEl = document.createElement('div');
     lineEl.className = 'terminal-line';
     
@@ -134,20 +164,32 @@ function updateStatusUI(status) {
     else if (status === 'starting' || status === 'stopping') statusLabel.classList.add('text-glowing-orange');
     else statusLabel.classList.add('text-glowing-red');
 
-    // Enable/Disable controls
-    btnStart.disabled = (status !== 'stopped');
-    btnStop.disabled = (status !== 'running');
+    // Single Toggle Button UI State
+    if (status === 'stopped') {
+        btnToggle.className = 'btn btn-start';
+        btnToggle.disabled = false;
+        btnToggleText.textContent = 'Start Server';
+    } else if (status === 'running') {
+        btnToggle.className = 'btn btn-stop';
+        btnToggle.disabled = false;
+        btnToggleText.textContent = 'Stop Server';
+    } else {
+        btnToggle.className = 'btn btn-stop';
+        btnToggle.disabled = true;
+        btnToggleText.textContent = `${status.toUpperCase()}...`;
+    }
+
     btnKill.disabled = (status === 'stopped');
     btnLock.disabled = (status !== 'stopped');
 }
 
-function updateStatsUI(cpu, ram) {
+function updateStatsUI(cpu, ram, totalRam) {
     cpuValue.textContent = `${cpu}%`;
     cpuBar.style.width = `${cpu}%`;
     
-    ramValue.textContent = `${ram} / 4 GB`;
-    // calculate ram percent based on 4GB limit
-    const ramPercent = Math.min((parseFloat(ram) / 4.0) * 100, 100);
+    const maxRam = totalRam || 16;
+    ramValue.textContent = `${ram} / ${maxRam} GB`;
+    const ramPercent = Math.min((parseFloat(ram) / parseFloat(maxRam)) * 100, 100);
     ramBar.style.width = `${ramPercent}%`;
 }
 
@@ -156,14 +198,17 @@ function loadInitialState() {
     fetch('/api/server/status')
         .then(res => res.json())
         .then(data => {
+            setConnectedState(true);
             updateStatusUI(data.status);
-            updateStatsUI(data.cpu, data.ram);
+            updateStatsUI(data.cpu, data.ram, data.totalRam);
             localIpText.textContent = data.localIp;
             tailscaleIpText.textContent = data.tailscaleIp;
             portText.textContent = data.port;
             refreshPlayers();
         })
-        .catch(err => console.error('Failed fetching status:', err));
+        .catch(err => {
+            console.error('Failed fetching status:', err);
+        });
 }
 
 // PLAYERS TAB SYNC
@@ -366,28 +411,31 @@ function renderBanned(banned) {
 }
 
 // ACTION BUTTON EVENT BINDINGS
-btnStart.onclick = () => {
-    btnStart.disabled = true;
-    fetch('/api/server/start', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) {
-                alert('Failed to start: ' + data.error);
-                btnStart.disabled = false;
-            }
-        });
-};
-
-btnStop.onclick = () => {
-    btnStop.disabled = true;
-    fetch('/api/server/stop', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) {
-                alert('Failed to stop: ' + data.error);
-                btnStop.disabled = false;
-            }
-        });
+btnToggle.onclick = () => {
+    btnToggle.disabled = true;
+    if (serverStatus === 'stopped') {
+        btnToggleText.textContent = 'STARTING...';
+        fetch('/api/server/start', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Failed to start: ' + (data.message || data.error));
+                    btnToggle.disabled = false;
+                }
+                loadInitialState();
+            });
+    } else if (serverStatus === 'running') {
+        btnToggleText.textContent = 'STOPPING...';
+        fetch('/api/server/stop', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Failed to stop: ' + (data.message || data.error));
+                    btnToggle.disabled = false;
+                }
+                loadInitialState();
+            });
+    }
 };
 
 btnKill.onclick = () => {
@@ -495,6 +543,7 @@ btnBanAdd.onclick = () => executePlayerAction('/api/server/players/ban');
 
 // BOOTSTRAP
 loadInitialState();
+fetchLogHistory();
 connectSSE();
 // Periodically refresh state & stats
 setInterval(loadInitialState, 3000);
