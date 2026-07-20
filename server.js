@@ -438,13 +438,8 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - Disabled per user request (Zero CPU overhead, zero top processes)
+// System CPU usage - Disabled per user request (Zero CPU overhead)
 let cachedCpuPercent = 0;
-
-// Kill any leftover top process on startup
-try {
-  exec('pkill -9 top 2>/dev/null || true');
-} catch (e) {}
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
