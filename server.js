@@ -67,6 +67,7 @@ function initEnvironment() {
     isSimulatorMode = false;
     console.log(`[+] Real Minecraft server files detected at ${SERVER_DIR}. Running in PRODUCTION mode.`);
     loadRealData();
+    startTailLog();
   } else {
     isSimulatorMode = true;
     console.warn(`\n[!] Real server files not found at ${SERVER_DIR}.\n[!] Running in SIMULATOR MODE for demonstration.\n`);
@@ -477,37 +478,95 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Calculate overall system-wide CPU usage percentage
+// Calculate overall system-wide CPU usage percentage via /proc/stat
 let systemCpuPercent = 0;
-let prevCpuTimes = null;
+let prevProcStat = null;
 
 function updateSystemCpuUsage() {
-  const cpus = os.cpus();
-  let idle = 0;
-  let total = 0;
+  try {
+    const data = fs.readFileSync('/proc/stat', 'utf8');
+    const line = data.split('\n')[0];
+    const parts = line.trim().split(/\s+/).slice(1).map(Number);
+    const idle = parts[3] + (parts[4] || 0);
+    const total = parts.reduce((a, b) => a + b, 0);
 
-  if (!cpus || cpus.length === 0) return;
-
-  cpus.forEach(core => {
-    for (const t in core.times) {
-      total += core.times[t];
+    if (prevProcStat) {
+      const idleDiff = idle - prevProcStat.idle;
+      const totalDiff = total - prevProcStat.total;
+      if (totalDiff > 0) {
+        systemCpuPercent = Math.max(1, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+      }
     }
-    idle += core.times.idle;
-  });
-
-  if (prevCpuTimes) {
-    const idleDiff = idle - prevCpuTimes.idle;
-    const totalDiff = total - prevCpuTimes.total;
-    if (totalDiff > 0) {
-      systemCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+    prevProcStat = { idle, total };
+  } catch (e) {
+    const cpus = os.cpus();
+    let idle = 0;
+    let total = 0;
+    if (cpus && cpus.length > 0) {
+      cpus.forEach(core => {
+        for (const t in core.times) total += core.times[t];
+        idle += core.times.idle;
+      });
+      if (prevProcStat) {
+        const idleDiff = idle - prevProcStat.idle;
+        const totalDiff = total - prevProcStat.total;
+        if (totalDiff > 0) {
+          systemCpuPercent = Math.max(1, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+        }
+      }
+      prevProcStat = { idle, total };
     }
   }
-
-  prevCpuTimes = { idle, total };
 }
 
-setInterval(updateSystemCpuUsage, 2000);
+setInterval(updateSystemCpuUsage, 1000);
 updateSystemCpuUsage();
+
+// Native Node.js real-time log file poller (500ms stream interval)
+let lastLogSize = 0;
+
+function pollLogFile() {
+  if (isSimulatorMode || !fs.existsSync(LOG_FILE)) return;
+  try {
+    const stats = fs.statSync(LOG_FILE);
+    if (lastLogSize === 0) {
+      // First run: sync offset to current size
+      lastLogSize = stats.size;
+      return;
+    }
+    if (stats.size > lastLogSize) {
+      const startPos = lastLogSize;
+      const endPos = stats.size - 1;
+      lastLogSize = stats.size;
+
+      const readStream = fs.createReadStream(LOG_FILE, {
+        start: startPos,
+        end: endPos,
+        encoding: 'utf8'
+      });
+
+      let buffer = '';
+      readStream.on('data', chunk => {
+        buffer += chunk;
+      });
+
+      readStream.on('end', () => {
+        const lines = buffer.split('\n');
+        lines.forEach(line => {
+          const clean = sanitizeLogLine(line);
+          if (clean) {
+            broadcast('log', clean);
+            parseLogLineForPlayers(clean);
+          }
+        });
+      });
+    } else if (stats.size < lastLogSize) {
+      lastLogSize = stats.size;
+    }
+  } catch (e) {}
+}
+
+setInterval(pollLogFile, 500);
 
 // Calculate total and used system memory dynamically
 function getSystemMemory() {
