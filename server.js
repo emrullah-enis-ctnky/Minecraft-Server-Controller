@@ -477,38 +477,22 @@ function handleApiRequest(req, res) {
 // System CPU usage - single background updater, cached value read by all consumers
 let cachedCpuPercent = 0;
 let _prevIdle = 0;
-let _prevTotal = 0;
-let _cpuInitialized = false;
+// System CPU usage - top command calculation
+let cachedCpuPercent = 1;
 
-function _sampleCpuTicks() {
-  const cpus = os.cpus();
-  let idle = 0, total = 0;
-  for (const cpu of cpus) {
-    idle += cpu.times.idle;
-    for (const t in cpu.times) total += cpu.times[t];
-  }
-  return { idle, total };
+function updateTopCpu() {
+  exec(`top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}'`, (err, stdout) => {
+    if (!err && stdout && stdout.trim()) {
+      const val = parseFloat(stdout.trim().replace(',', '.'));
+      if (!isNaN(val)) {
+        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
+      }
+    }
+  });
 }
 
-// Initialize first sample immediately
-(function initCpu() {
-  const s = _sampleCpuTicks();
-  _prevIdle = s.idle;
-  _prevTotal = s.total;
-  _cpuInitialized = true;
-})();
-
-// Update cached CPU every 2 seconds (single writer, no consumer conflict)
-setInterval(() => {
-  const s = _sampleCpuTicks();
-  const idleDelta = s.idle - _prevIdle;
-  const totalDelta = s.total - _prevTotal;
-  _prevIdle = s.idle;
-  _prevTotal = s.total;
-  if (totalDelta > 0) {
-    cachedCpuPercent = Math.max(0, Math.min(100, Math.round(((totalDelta - idleDelta) / totalDelta) * 100)));
-  }
-}, 2000);
+setInterval(updateTopCpu, 1500);
+updateTopCpu();
 
 // Broadcast stats over SSE every 1.5s (reads cached value only)
 setInterval(() => {
