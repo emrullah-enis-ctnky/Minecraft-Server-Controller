@@ -477,6 +477,38 @@ function handleApiRequest(req, res) {
     return;
   }
 
+// Calculate overall system-wide CPU usage percentage
+let systemCpuPercent = 0;
+let prevCpuTimes = null;
+
+function updateSystemCpuUsage() {
+  const cpus = os.cpus();
+  let idle = 0;
+  let total = 0;
+
+  if (!cpus || cpus.length === 0) return;
+
+  cpus.forEach(core => {
+    for (const t in core.times) {
+      total += core.times[t];
+    }
+    idle += core.times.idle;
+  });
+
+  if (prevCpuTimes) {
+    const idleDiff = idle - prevCpuTimes.idle;
+    const totalDiff = total - prevCpuTimes.total;
+    if (totalDiff > 0) {
+      systemCpuPercent = Math.max(0, Math.min(100, Math.round((1 - idleDiff / totalDiff) * 100)));
+    }
+  }
+
+  prevCpuTimes = { idle, total };
+}
+
+setInterval(updateSystemCpuUsage, 2000);
+updateSystemCpuUsage();
+
 // Calculate total and used system memory dynamically
 function getSystemMemory() {
   const totalBytes = os.totalmem();
@@ -491,29 +523,28 @@ function getSystemMemory() {
   if (pathname === '/api/server/status' && req.method === 'GET') {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
-        getRealProcessMetrics((cpu) => {
-          const sysMem = getSystemMemory();
-          let ram = sysMem.usedGb;
-          let totalRam = sysMem.totalGb;
+        const sysMem = getSystemMemory();
+        let cpu = systemCpuPercent;
+        let ram = sysMem.usedGb;
+        let totalRam = sysMem.totalGb;
 
-          if (isSimulatorMode) {
-            cpu = simCpu;
-            ram = simRam;
-          }
+        if (isSimulatorMode) {
+          cpu = simCpu;
+          ram = simRam;
+        }
 
-          res.writeHead(200);
-          res.end(JSON.stringify({
-            status,
-            simulatorMode: isSimulatorMode,
-            localIp: getLocalIP(),
-            tailscaleIp,
-            port: 19132,
-            cpu,
-            ram,
-            totalRam,
-            activePlayers: Array.from(activePlayers)
-          }));
-        });
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          status,
+          simulatorMode: isSimulatorMode,
+          localIp: getLocalIP(),
+          tailscaleIp,
+          port: 19132,
+          cpu,
+          ram,
+          totalRam,
+          activePlayers: Array.from(activePlayers)
+        }));
       });
     });
   }
