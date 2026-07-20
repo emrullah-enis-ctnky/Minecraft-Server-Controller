@@ -438,11 +438,15 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Native Linux /proc/stat CPU reader (Zero sub-processes spawned, zero pileup, 100% accurate)
+// Hybrid CPU calculation: max of /proc/stat tick delta and /proc/loadavg system load
 let cachedCpuPercent = 1;
 let prevProcStat = null;
 
-function updateNativeProcCpu() {
+function updateHybridCpu() {
+  let statPercent = 0;
+  let loadPercent = 0;
+
+  // 1. /proc/stat calculation
   try {
     const data = fs.readFileSync('/proc/stat', 'utf8');
     const firstLine = data.split('\n')[0];
@@ -463,22 +467,33 @@ function updateNativeProcCpu() {
     if (prevProcStat && prevProcStat.total > 0) {
       const totalDiff = total - prevProcStat.total;
       const idleDiff = idleTime - prevProcStat.idleTime;
-
       if (totalDiff > 0) {
-        const cores = os.cpus().length || 1;
-        // Calculate instant percentage across cores
-        const usageRatio = (totalDiff - idleDiff) / totalDiff;
-        // Normalized 0-100% usage (multi-core aggregate)
-        const usagePercent = Math.round(usageRatio * 100);
-        cachedCpuPercent = Math.max(1, Math.min(100, usagePercent));
+        statPercent = Math.round(((totalDiff - idleDiff) / totalDiff) * 100);
       }
     }
     prevProcStat = { total, idleTime };
   } catch (e) {}
+
+  // 2. /proc/loadavg calculation
+  try {
+    const data = fs.readFileSync('/proc/loadavg', 'utf8');
+    const parts = data.trim().split(/\s+/);
+    if (parts.length > 0) {
+      const load1m = parseFloat(parts[0]);
+      const cores = os.cpus().length || 1;
+      if (!isNaN(load1m)) {
+        loadPercent = Math.round((load1m * 100) / cores);
+      }
+    }
+  } catch (e) {}
+
+  // Take maximum so high load average (e.g. load 5-6) is NEVER missed or reported as 1%
+  const finalCpu = Math.max(statPercent, loadPercent);
+  cachedCpuPercent = Math.max(1, Math.min(100, finalCpu));
 }
 
-setInterval(updateNativeProcCpu, 500);
-updateNativeProcCpu();
+setInterval(updateHybridCpu, 500);
+updateHybridCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
