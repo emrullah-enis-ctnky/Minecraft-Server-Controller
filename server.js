@@ -438,58 +438,16 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - User's exact /proc/stat delta math formula (Pure Node.js, 0 subprocesses, 0 lag)
-let cachedCpuPercent = 1;
-let lastCpuStatSample = null;
+// CPU measurement completely disabled per user request (Zero CPU calculation, zero intervals, zero sub-processes)
 
-function calculateUserProcStatCpu() {
-  try {
-    if (!fs.existsSync('/proc/stat')) return;
-    const data = fs.readFileSync('/proc/stat', 'utf8');
-    const firstLine = data.split('\n')[0];
-    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
-
-    // parts: user(0), nice(1), system(2), idle(3), iowait(4), irq(5), softirq(6), steal(7)
-    const user = parts[0] || 0;
-    const nice = parts[1] || 0;
-    const system = parts[2] || 0;
-    const idle = parts[3] || 0;
-    const iowait = parts[4] || 0;
-    const irq = parts[5] || 0;
-    const softirq = parts[6] || 0;
-    const steal = parts[7] || 0;
-
-    // t = user + nice + system + idle + iowait + irq + softirq + steal
-    const t = user + nice + system + idle + iowait + irq + softirq + steal;
-    // idl = idle + iowait
-    const idl = idle + iowait;
-
-    if (lastCpuStatSample && lastCpuStatSample.t > 0) {
-      const dt = t - lastCpuStatSample.t;
-      const di = idl - lastCpuStatSample.idl;
-
-      if (dt > 0) {
-        const usageRatio = Math.max(0, Math.min(1, (dt - di) / dt));
-        const rawUsage = Math.round(usageRatio * 100);
-        cachedCpuPercent = Math.max(1, Math.min(100, rawUsage));
-      }
-    }
-    lastCpuStatSample = { t, idl };
-  } catch (e) {}
-}
-
-setInterval(calculateUserProcStatCpu, 1000);
-calculateUserProcStatCpu();
-
-// Broadcast stats over SSE every 500ms (fast live updates)
+// Broadcast stats over SSE every 1s (RAM only)
 setInterval(() => {
   const sysMem = getSystemMemory();
   broadcast('stats', {
-    cpu: cachedCpuPercent,
     ram: sysMem.usedGb,
     totalRam: sysMem.totalGb
   });
-}, 500);
+}, 1000);
 
 // Native Node.js real-time log file poller (250ms stream interval)
 let lastLogSize = -1;
@@ -579,7 +537,6 @@ function getMemoryFlags() {
   if (pathname === '/api/server/status' && req.method === 'GET') {
     getTailscaleIP(tailscaleIp => {
       checkRealServerStatus(status => {
-        const cpu = cachedCpuPercent;
         const sysMem = getSystemMemory();
         const ram = sysMem.usedGb;
         const totalRam = sysMem.totalGb;
@@ -591,7 +548,6 @@ function getMemoryFlags() {
           localIp: getLocalIP(),
           tailscaleIp,
           port: 19132,
-          cpu,
           ram,
           totalRam,
           activePlayers: Array.from(activePlayers)
