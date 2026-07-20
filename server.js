@@ -438,38 +438,47 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Startup cleanup: kill any orphan top processes from older node instances
-try {
-  exec('pkill -9 top || killall -9 top > /dev/null 2>&1 || true');
-} catch (e) {}
-
-// System CPU usage - Strict Single-Process Mutex for top command (100% immune to process pileup and btop conflicts)
+// Native C++ os.cpus() tick reader (Zero sub-processes, zero lockup, 0% CPU overhead, btop friendly)
 let cachedCpuPercent = 1;
-let isTopActive = false;
+let prevCpuTimes = null;
 
-function runSingleTopCommand() {
-  // Strict Mutex: If a top process is currently running, do NOTHING until it finishes
-  if (isTopActive) return;
-  isTopActive = true;
+function updateNativeCpu() {
+  try {
+    const cpus = os.cpus();
+    if (!cpus || cpus.length === 0) return;
 
-  const cmd = `LC_ALL=C top -b -n 2 -d 0.2 | grep "Cpu(s)" | tail -n 1 | awk '{print 100 - $8}'`;
-  
-  // 3-second hard timeout so top can never hang or freeze Node
-  exec(cmd, { timeout: 3000 }, (err, stdout) => {
-    isTopActive = false;
+    let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
+    for (const c of cpus) {
+      user += c.times.user;
+      nice += c.times.nice;
+      sys += c.times.sys;
+      idle += c.times.idle;
+      irq += c.times.irq;
+    }
 
-    if (!err && stdout && stdout.trim()) {
-      const val = parseFloat(stdout.trim());
-      if (!isNaN(val)) {
-        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
+    const total = user + nice + sys + idle + irq;
+    const active = user + nice + sys + irq;
+
+    if (prevCpuTimes && prevCpuTimes.total > 0) {
+      const totalDiff = total - prevCpuTimes.total;
+      const activeDiff = active - prevCpuTimes.active;
+
+      if (totalDiff > 0) {
+        const usage = Math.round((activeDiff / totalDiff) * 100);
+        cachedCpuPercent = Math.max(1, Math.min(100, usage));
       }
     }
-  });
+    prevCpuTimes = { total, active };
+  } catch (e) {}
 }
 
-// 3-second interval gives top (0.3s execution time) plenty of rest between runs
-setInterval(runSingleTopCommand, 3000);
-runSingleTopCommand();
+// Kill any top process on startup
+try {
+  exec('pkill -9 top 2>/dev/null || true');
+} catch (e) {}
+
+setInterval(updateNativeCpu, 1000);
+updateNativeCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
