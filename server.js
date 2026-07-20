@@ -194,8 +194,8 @@ function addLog(message) {
 
 // Check real screen or java process status
 function checkRealServerStatus(callback) {
-  // Strictly match Minecraft server processes (nogui, mc_server, server.jar) or screen session
-  exec('pgrep -f "mc_server" || pgrep -f "nogui" || pgrep -f "server.jar" || screen -ls | grep -i mc', (err, stdout) => {
+  // Strictly match Java Minecraft processes (java.*nogui, java.*.jar) or screen session mcsunucu
+  exec('pgrep -f "java.*nogui" || pgrep -f "java.*\\.jar" || screen -ls | grep mcsunucu', (err, stdout) => {
     const isRunning = Boolean(stdout && stdout.trim());
     if (isRunning) {
       if (serverStatus === 'stopped') {
