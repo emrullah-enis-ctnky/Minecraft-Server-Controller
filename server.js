@@ -438,43 +438,30 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - Pure Linux /proc/stat active execution delta (Standard System Monitor formula)
+// System CPU usage - User's exact top command with guaranteed 2s async delay throttle
 let cachedCpuPercent = 1;
-let prevProcStat = null;
+let isExecutingTop = false;
 
-function updatePureProcCpu() {
-  try {
-    const data = fs.readFileSync('/proc/stat', 'utf8');
-    const firstLine = data.split('\n')[0];
-    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
+function scheduleTopCpu() {
+  if (isExecutingTop) return;
+  isExecutingTop = true;
 
-    const user = parts[0] || 0;
-    const nice = parts[1] || 0;
-    const system = parts[2] || 0;
-    const idle = parts[3] || 0;
-    const iowait = parts[4] || 0;
-    const irq = parts[5] || 0;
-    const softirq = parts[6] || 0;
-    const steal = parts[7] || 0;
-
-    const active = user + nice + system + irq + softirq + steal;
-    const total = active + idle + iowait;
-
-    if (prevProcStat && prevProcStat.total > 0) {
-      const totalDiff = total - prevProcStat.total;
-      const activeDiff = active - prevProcStat.active;
-
-      if (totalDiff > 0) {
-        const usage = Math.round((activeDiff / totalDiff) * 100);
-        cachedCpuPercent = Math.max(1, Math.min(100, usage));
+  const cmd = `LC_ALL=C top -b -n 2 -d 0.2 | grep "Cpu(s)" | tail -n 1 | awk '{print 100 - $8}'`;
+  exec(cmd, (err, stdout) => {
+    isExecutingTop = false;
+    if (!err && stdout && stdout.trim()) {
+      const val = parseFloat(stdout.trim());
+      if (!isNaN(val)) {
+        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
       }
     }
-    prevProcStat = { total, active };
-  } catch (e) {}
+    // Schedule next execution 2 seconds after completion
+    setTimeout(scheduleTopCpu, 2000);
+  });
 }
 
-setInterval(updatePureProcCpu, 500);
-updatePureProcCpu();
+// Start first execution
+scheduleTopCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
