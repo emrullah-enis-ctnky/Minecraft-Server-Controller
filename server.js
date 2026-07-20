@@ -470,8 +470,9 @@ function calculateUserProcStatCpu() {
 
       if (dt > 0) {
         // usage = (1 - (di / dt)) * 100
-        const rawUsage = Math.round((1 - (di / dt)) * 100);
-        cachedCpuPercent = Math.max(0, Math.min(100, rawUsage));
+        const usageRatio = Math.max(0, Math.min(1, 1 - (di / dt)));
+        const rawUsage = Math.round(usageRatio * 100);
+        cachedCpuPercent = Math.max(1, Math.min(100, rawUsage));
       }
     }
     lastCpuStatSample = { t, idl };
