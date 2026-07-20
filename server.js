@@ -438,54 +438,37 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - btop's exact C++ Linux CPU calculation algorithm (sampled every 500ms)
-let cachedCpuPercent = 0;
-let prevBtopSample = null;
+// System CPU usage - User's exact /proc/loadavg formula (load1m * 100 / nproc)
+let cachedCpuPercent = 1;
 
-function getBtopExactCpu() {
+function getProcLoadavgCpu() {
   try {
-    const data = fs.readFileSync('/proc/stat', 'utf8');
-    const firstLine = data.split('\n')[0];
-    const parts = firstLine.trim().split(/\s+/).slice(1).map(Number);
-
-    let user = parts[0] || 0;
-    let nice = parts[1] || 0;
-    const system = parts[2] || 0;
-    const idle = parts[3] || 0;
-    const iowait = parts[4] || 0;
-    const irq = parts[5] || 0;
-    const softirq = parts[6] || 0;
-    const steal = parts[7] || 0;
-    const guest = parts[8] || 0;
-    const guest_nice = parts[9] || 0;
-
-    user = Math.max(0, user - guest);
-    nice = Math.max(0, nice - guest_nice);
-    const idle_all = idle + iowait;
-    const system_all = system + irq + softirq;
-    const virt_all = guest + guest_nice;
-    const total = user + nice + system_all + idle_all + steal + virt_all;
-
-    if (prevBtopSample && prevBtopSample.total > 0) {
-      const period_total = total - prevBtopSample.total;
-      const period_idle = idle_all - prevBtopSample.idle_all;
-      prevBtopSample = { idle_all, total };
-
-      if (period_total > 0) {
-        const usage = Math.round(((period_total - period_idle) / period_total) * 100);
-        return Math.max(0, Math.min(100, usage));
+    const data = fs.readFileSync('/proc/loadavg', 'utf8');
+    const parts = data.trim().split(/\s+/);
+    if (parts.length > 0) {
+      const load1m = parseFloat(parts[0]);
+      const cores = os.cpus().length || 1;
+      if (!isNaN(load1m)) {
+        const usage = Math.round((load1m * 100) / cores);
+        return Math.max(1, Math.min(100, usage));
       }
     }
-    prevBtopSample = { idle_all, total };
   } catch (e) {}
-  return cachedCpuPercent;
+
+  try {
+    const load1m = os.loadavg()[0] || 0;
+    const cores = os.cpus().length || 1;
+    return Math.max(1, Math.min(100, Math.round((load1m * 100) / cores)));
+  } catch (e) {}
+
+  return 1;
 }
 
-// 500ms btop sampling interval
+// Update cached CPU every 500ms
 setInterval(() => {
-  cachedCpuPercent = getBtopExactCpu();
+  cachedCpuPercent = getProcLoadavgCpu();
 }, 500);
-cachedCpuPercent = getBtopExactCpu();
+cachedCpuPercent = getProcLoadavgCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
