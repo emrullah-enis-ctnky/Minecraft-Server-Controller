@@ -216,8 +216,9 @@ function checkRealServerStatus(callback) {
     }
 
     if (foundMinecraft) {
-      if (serverStatus === 'stopped') {
+      if (serverStatus === 'stopped' || serverStatus === 'starting') {
         serverStatus = 'running';
+        broadcast('status_change', { status: serverStatus });
       }
       if (isSimulatorMode) {
         isSimulatorMode = false;
@@ -233,7 +234,7 @@ function checkRealServerStatus(callback) {
   });
 }
 
-// Get real process CPU and RAM metrics
+// Get real process CPU and RAM metrics (normalized across all CPU cores)
 function getRealProcessMetrics(callback) {
   if (isSimulatorMode || serverStatus === 'stopped') {
     return callback(0, 0);
@@ -250,9 +251,17 @@ function getRealProcessMetrics(callback) {
       totalCpu += parseFloat(parts[0]) || 0;
       totalRssKb += parseInt(parts[1]) || 0;
     });
+    const cores = os.cpus().length || 1;
+    const normalizedCpu = Math.min(100, Math.round(totalCpu / cores));
     const ramGb = (totalRssKb / (1024 * 1024)).toFixed(2);
-    callback(Math.round(totalCpu), ramGb);
+    callback(normalizedCpu, ramGb);
   });
+}
+
+// Clean raw log lines so newlines/carriages don't break SSE framing
+function sanitizeLogLine(line) {
+  if (typeof line !== 'string') return '';
+  return line.replace(/[\r\n]+/g, ' ').trim();
 }
 
 // Real server: Tail latest.log and stream it
@@ -262,28 +271,35 @@ function startTailLog() {
     try { activeTailProcess.kill(); } catch (e) {}
   }
 
-  // Load last 50 lines first
+  // Load and parse recent log lines first
   try {
     if (fs.existsSync(LOG_FILE)) {
       const logData = fs.readFileSync(LOG_FILE, 'utf8');
       const lines = logData.split('\n').filter(Boolean);
-      const lastLines = lines.slice(-50);
-      lastLines.forEach(line => broadcast('log', line));
+      const lastLines = lines.slice(-60);
+      lastLines.forEach(line => {
+        const clean = sanitizeLogLine(line);
+        if (clean) {
+          broadcast('log', clean);
+          parseLogLineForPlayers(clean);
+        }
+      });
     }
   } catch (e) {
     console.error('Could not preload logs:', e.message);
   }
 
-  // Spawn tail -n 0 -f LOG_FILE
+  // Spawn tail -n 0 -F LOG_FILE
   if (fs.existsSync(LOG_FILE)) {
-    activeTailProcess = spawn('tail', ['-n', '0', '-f', LOG_FILE]);
+    activeTailProcess = spawn('tail', ['-n', '0', '-F', LOG_FILE]);
     activeTailProcess.stdout.on('data', (data) => {
-      const chunk = data.toString();
+      const chunk = data.toString('utf8');
       const lines = chunk.split('\n');
       lines.forEach(line => {
-        if (line.trim()) {
-          broadcast('log', line);
-          parseLogLineForPlayers(line);
+        const clean = sanitizeLogLine(line);
+        if (clean) {
+          broadcast('log', clean);
+          parseLogLineForPlayers(clean);
         }
       });
     });
@@ -295,16 +311,16 @@ function startTailLog() {
 }
 
 function parseLogLineForPlayers(line) {
-  // Minecraft log join pattern: [Server thread/INFO]: PlayerName[/IP:port] joined the game
-  // Minecraft log leave pattern: [Server thread/INFO]: PlayerName left the game
-  if (line.includes('joined the game')) {
-    const match = line.match(/INFO\]:\s+([A-Za-z0-9_*]+)(?:\[\/[\d\.:]+\])?\s+joined/);
-    if (match && match[1]) {
+  // Support standard Java joins, entity IDs, UUIDs, Geyser logins, and disconnects
+  if (line.includes('joined the game') || line.includes('logged in with entity id') || line.includes('UUID of player')) {
+    let match = line.match(/(?:INFO\]:|UUID of player)\s+([A-Za-z0-9_*]+)/);
+    if (!match) match = line.match(/([A-Za-z0-9_*]+)\[\/[\d\.:]+\]\s+logged in/);
+    if (match && match[1] && !match[1].startsWith('Server') && !match[1].startsWith('Geyser') && match[1] !== 'Paper') {
       activePlayers.add(match[1]);
       broadcast('status_update', { activePlayers: Array.from(activePlayers) });
     }
-  } else if (line.includes('left the game')) {
-    const match = line.match(/INFO\]:\s+([A-Za-z0-9_*]+)\s+left/);
+  } else if (line.includes('left the game') || line.includes('lost connection') || line.includes('disconnected')) {
+    let match = line.match(/(?:INFO\]:|\s+)([A-Za-z0-9_*]+)\s+(?:left the game|lost connection|disconnected)/);
     if (match && match[1]) {
       activePlayers.delete(match[1]);
       broadcast('status_update', { activePlayers: Array.from(activePlayers) });
