@@ -511,14 +511,11 @@ function handleApiRequest(req, res) {
       serverStatus = 'stopping';
       broadcast('status_change', { status: serverStatus });
       
-      // Send stop command
-      exec(`screen -S mcsunucu -X stuff "stop\n"`, (err) => {
-        if (err) {
-          res.writeHead(500);
-          return res.end(JSON.stringify({ success: false, error: err.message }));
-        }
+      // Send graceful stop command via screen stuff, then fallback to pkill SIGINT/SIGTERM
+      exec('screen -S mcsunucu -X stuff "stop\n" || screen -X stuff "stop\n" || pkill -SIGINT -f java || pkill -SIGTERM -f java', () => {
+        addLog('[System/INFO]: Sent graceful stop signal to Minecraft server.');
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Server stop command sent.' }));
+        res.end(JSON.stringify({ success: true, message: 'Server stop signal sent.' }));
       });
     }
   }
@@ -533,11 +530,11 @@ function handleApiRequest(req, res) {
       serverStatus = 'stopping';
       broadcast('status_change', { status: serverStatus });
       
-      exec('killall -9 java && screen -wipe', (err) => {
+      exec('pkill -9 -f java || killall -9 java; screen -wipe', () => {
         serverStatus = 'stopped';
         broadcast('status_change', { status: serverStatus });
         if (activeTailProcess) {
-          activeTailProcess.kill();
+          try { activeTailProcess.kill(); } catch (e) {}
           activeTailProcess = null;
         }
         activePlayers.clear();

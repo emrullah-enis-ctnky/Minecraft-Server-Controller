@@ -7,7 +7,6 @@ let currentTab = 'tab-active';
 // Cache DOM Elements
 const connectionDot = document.getElementById('connection-dot');
 const connectionText = document.getElementById('connection-text');
-const modeBadge = document.getElementById('mode-badge');
 
 const statusRing = document.getElementById('status-ring');
 const statusLabel = document.getElementById('server-status-label');
@@ -79,17 +78,6 @@ function connectSSE() {
         connectionText.textContent = 'Disconnected (Retrying...)';
     };
     
-    // Custom events
-    eventSource.addEventListener('connected', (e) => {
-        const data = JSON.parse(e.data);
-        modeBadge.textContent = `${data.mode} Mode`;
-        if (data.mode === 'Simulator') {
-            modeBadge.className = 'badge badge-simulator';
-        } else {
-            modeBadge.className = 'badge badge-production';
-        }
-    });
-
     eventSource.addEventListener('log', (e) => {
         appendLogLine(e.data);
     });
@@ -173,15 +161,6 @@ function loadInitialState() {
             localIpText.textContent = data.localIp;
             tailscaleIpText.textContent = data.tailscaleIp;
             portText.textContent = data.port;
-            
-            // Set mode badge from status API
-            if (data.simulatorMode) {
-                modeBadge.textContent = 'Simulator Mode';
-                modeBadge.className = 'badge badge-simulator';
-            } else {
-                modeBadge.textContent = 'Production Mode';
-                modeBadge.className = 'badge badge-production';
-            }
             refreshPlayers();
         })
         .catch(err => console.error('Failed fetching status:', err));
