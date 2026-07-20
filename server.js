@@ -22,6 +22,7 @@ let operatorList = []; // Array of { name, level }
 let whitelist = []; // Array of names
 let bannedPlayers = []; // Array of names
 let activeTailProcess = null;
+let realLogHistory = [];
 
 // Simulator variables
 let simulatorIntervals = [];
@@ -547,16 +548,20 @@ function pollLogFile() {
       });
 
       readStream.on('end', () => {
-        const lines = buffer.split('\n');
-        lines.forEach(line => {
-          const clean = sanitizeLogLine(line);
-          if (clean) {
-            realLogHistory.push(clean);
-            if (realLogHistory.length > 400) realLogHistory.shift();
-            broadcast('log', clean);
-            parseLogLineForPlayers(clean);
-          }
-        });
+        try {
+          const lines = buffer.split('\n');
+          lines.forEach(line => {
+            const clean = sanitizeLogLine(line);
+            if (clean) {
+              if (Array.isArray(realLogHistory)) {
+                realLogHistory.push(clean);
+                if (realLogHistory.length > 400) realLogHistory.shift();
+              }
+              broadcast('log', clean);
+              parseLogLineForPlayers(clean);
+            }
+          });
+        } catch (err) {}
       });
     } else if (stats.size < lastLogSize) {
       lastLogSize = stats.size;
