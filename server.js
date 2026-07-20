@@ -438,47 +438,13 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// Native C++ os.cpus() tick reader (Zero sub-processes, zero lockup, 0% CPU overhead, btop friendly)
-let cachedCpuPercent = 1;
-let prevCpuTimes = null;
+// System CPU usage - Disabled per user request (Zero CPU overhead, zero top processes)
+let cachedCpuPercent = 0;
 
-function updateNativeCpu() {
-  try {
-    const cpus = os.cpus();
-    if (!cpus || cpus.length === 0) return;
-
-    let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
-    for (const c of cpus) {
-      user += c.times.user;
-      nice += c.times.nice;
-      sys += c.times.sys;
-      idle += c.times.idle;
-      irq += c.times.irq;
-    }
-
-    const total = user + nice + sys + idle + irq;
-    const active = user + nice + sys + irq;
-
-    if (prevCpuTimes && prevCpuTimes.total > 0) {
-      const totalDiff = total - prevCpuTimes.total;
-      const activeDiff = active - prevCpuTimes.active;
-
-      if (totalDiff > 0) {
-        const usage = Math.round((activeDiff / totalDiff) * 100);
-        cachedCpuPercent = Math.max(1, Math.min(100, usage));
-      }
-    }
-    prevCpuTimes = { total, active };
-  } catch (e) {}
-}
-
-// Kill any top process on startup
+// Kill any leftover top process on startup
 try {
   exec('pkill -9 top 2>/dev/null || true');
 } catch (e) {}
-
-setInterval(updateNativeCpu, 1000);
-updateNativeCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
