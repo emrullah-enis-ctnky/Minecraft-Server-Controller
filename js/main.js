@@ -11,8 +11,6 @@ const connectionText = document.getElementById('connection-text');
 const statusRing = document.getElementById('status-ring');
 const statusLabel = document.getElementById('server-status-label');
 
-const cpuValue = document.getElementById('cpu-value');
-const cpuBar = document.getElementById('cpu-bar');
 const ramValue = document.getElementById('ram-value');
 const ramBar = document.getElementById('ram-bar');
 
@@ -182,14 +180,10 @@ function updateStatusUI(status) {
 }
 
 function updateStatsUI(cpu, ram, totalRam) {
-    const safeCpu = typeof cpu === 'number' && !isNaN(cpu) ? cpu : 0;
-    cpuValue.textContent = `${safeCpu}%`;
-    cpuBar.style.width = `${Math.min(100, Math.max(0, safeCpu))}%`;
-    
     const maxRam = totalRam || 16;
-    ramValue.textContent = `${ram} / ${maxRam} GB`;
+    if (ramValue) ramValue.textContent = `${ram} / ${maxRam} GB`;
     const ramPercent = Math.min((parseFloat(ram) / parseFloat(maxRam)) * 100, 100);
-    ramBar.style.width = `${ramPercent}%`;
+    if (ramBar) ramBar.style.width = `${ramPercent}%`;
 }
 
 // FETCH STATIC STATE
