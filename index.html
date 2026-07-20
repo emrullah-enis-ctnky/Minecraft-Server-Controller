@@ -126,7 +126,10 @@
                     </div>
                     <form class="terminal-input-wrapper" id="terminal-form">
                         <span class="terminal-prompt">&gt;</span>
-                        <input type="text" id="terminal-input" placeholder="Type minecraft command (e.g. /op Notch, /time set day)..." autocomplete="off">
+                        <div class="input-autocomplete-wrapper">
+                            <input type="text" id="terminal-input" placeholder="Type minecraft command (e.g. /op Notch, /time set day)..." autocomplete="off">
+                            <div id="autocomplete-popup" class="autocomplete-popup hidden"></div>
+                        </div>
                         <button type="submit" class="btn-send-cmd">Send</button>
                     </form>
                 </div>

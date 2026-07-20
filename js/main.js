@@ -468,9 +468,106 @@ btnClearTerm.onclick = () => {
     terminalOutput.innerHTML = '<div class="terminal-line system-line">[System] Terminal output cleared.</div>';
 };
 
-// TERMINAL COMMAND SUBMIT
+// TERMINAL COMMAND SUBMIT & AUTOCOMPLETE
+const autocompletePopup = document.getElementById('autocomplete-popup');
+
+const MINECRAFT_COMMANDS = [
+    { cmd: '/op', desc: 'Grant operator privileges' },
+    { cmd: '/deop', desc: 'Revoke operator privileges' },
+    { cmd: '/whitelist add', desc: 'Add player to whitelist' },
+    { cmd: '/whitelist remove', desc: 'Remove player from whitelist' },
+    { cmd: '/ban', desc: 'Ban player from server' },
+    { cmd: '/pardon', desc: 'Unban player' },
+    { cmd: '/kick', desc: 'Kick player from server' },
+    { cmd: '/tp', desc: 'Teleport player' },
+    { cmd: '/gamemode creative', desc: 'Set gamemode to Creative' },
+    { cmd: '/gamemode survival', desc: 'Set gamemode to Survival' },
+    { cmd: '/gamemode spectator', desc: 'Set gamemode to Spectator' },
+    { cmd: '/time set day', desc: 'Set time to Daytime' },
+    { cmd: '/time set night', desc: 'Set time to Nighttime' },
+    { cmd: '/weather clear', desc: 'Clear weather' },
+    { cmd: '/weather rain', desc: 'Set weather to rain' },
+    { cmd: '/say', desc: 'Broadcast message to server' },
+    { cmd: '/list', desc: 'List online players' },
+    { cmd: '/stop', desc: 'Stop Minecraft server' },
+    { cmd: '/help', desc: 'Display command help' }
+];
+
+let selectedIndex = -1;
+
+function updateAutocompleteSuggestions() {
+    const val = terminalInput.value;
+    if (!val) {
+        autocompletePopup.classList.add('hidden');
+        autocompletePopup.innerHTML = '';
+        selectedIndex = -1;
+        return;
+    }
+
+    const matches = MINECRAFT_COMMANDS.filter(item => 
+        item.cmd.toLowerCase().startsWith(val.toLowerCase()) || 
+        item.cmd.toLowerCase().includes(val.toLowerCase())
+    );
+
+    if (matches.length === 0) {
+        autocompletePopup.classList.add('hidden');
+        autocompletePopup.innerHTML = '';
+        selectedIndex = -1;
+        return;
+    }
+
+    autocompletePopup.innerHTML = '';
+    selectedIndex = -1;
+
+    matches.slice(0, 8).forEach((item) => {
+        const div = document.createElement('div');
+        div.className = 'autocomplete-item';
+        div.setAttribute('data-cmd', item.cmd);
+
+        const cmdSpan = document.createElement('span');
+        cmdSpan.textContent = item.cmd;
+
+        const descSpan = document.createElement('span');
+        descSpan.className = 'autocomplete-desc';
+        descSpan.textContent = item.desc;
+
+        div.appendChild(cmdSpan);
+        div.appendChild(descSpan);
+
+        div.onclick = () => {
+            terminalInput.value = item.cmd + ' ';
+            autocompletePopup.classList.add('hidden');
+            terminalInput.focus();
+        };
+
+        autocompletePopup.appendChild(div);
+    });
+
+    autocompletePopup.classList.remove('hidden');
+}
+
+function highlightItem(items) {
+    items.forEach((item, idx) => {
+        if (idx === selectedIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+terminalInput.addEventListener('input', updateAutocompleteSuggestions);
+
+document.addEventListener('click', (e) => {
+    if (!terminalInput.contains(e.target) && !autocompletePopup.contains(e.target)) {
+        autocompletePopup.classList.add('hidden');
+    }
+});
+
 terminalForm.onsubmit = (e) => {
     e.preventDefault();
+    autocompletePopup.classList.add('hidden');
     const cmd = terminalInput.value.trim();
     if (!cmd) return;
 
@@ -489,8 +586,32 @@ terminalForm.onsubmit = (e) => {
     terminalInput.value = '';
 };
 
-// Terminal command history UP/DOWN keys
+// Terminal command history & Autocomplete navigation
 terminalInput.onkeydown = (e) => {
+    const items = autocompletePopup.querySelectorAll('.autocomplete-item');
+    if (!autocompletePopup.classList.contains('hidden') && items.length > 0) {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = (selectedIndex + 1) % items.length;
+            highlightItem(items);
+            return;
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+            highlightItem(items);
+            return;
+        } else if (e.key === 'Tab' || (e.key === 'Enter' && selectedIndex >= 0)) {
+            e.preventDefault();
+            const targetIdx = selectedIndex >= 0 ? selectedIndex : 0;
+            if (items[targetIdx]) {
+                terminalInput.value = items[targetIdx].getAttribute('data-cmd') + ' ';
+                autocompletePopup.classList.add('hidden');
+                selectedIndex = -1;
+            }
+            return;
+        }
+    }
+
     if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (historyIndex > 0) {
