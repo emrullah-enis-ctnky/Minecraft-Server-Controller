@@ -479,7 +479,7 @@ function handleApiRequest(req, res) {
   }
 
 // Calculate overall system-wide CPU usage percentage via official Linux procfs formula
-let systemCpuPercent = 0;
+let systemCpuPercent = 1;
 let prevProcStat = null;
 let realLogHistory = [];
 
@@ -505,18 +505,17 @@ function updateSystemCpuUsage() {
       if (prevProcStat && prevProcStat.total > 0) {
         const totalDiff = total - prevProcStat.total;
         const idleDiff = totalIdle - prevProcStat.idle;
-        prevProcStat = { idle: totalIdle, total };
 
         if (totalDiff > 0) {
           const cpuPercent = Math.round(((totalDiff - idleDiff) / totalDiff) * 100);
-          systemCpuPercent = Math.max(0, Math.min(100, cpuPercent));
-          return;
+          systemCpuPercent = Math.max(1, Math.min(100, cpuPercent));
         }
       }
       prevProcStat = { idle: totalIdle, total };
+      return;
     }
   } catch (e) {}
-  systemCpuPercent = 0;
+  systemCpuPercent = 1;
 }
 
 setInterval(updateSystemCpuUsage, 1000);
@@ -644,9 +643,23 @@ function getSystemMemory() {
         serverStatus = 'starting';
         broadcast('status_change', { status: serverStatus });
         
-        // Command to start paperMC in screen
+// Dynamically optimize Java RAM flags based on system total memory
+function getMemoryFlags() {
+  const totalGb = os.totalmem() / (1024 * 1024 * 1024);
+  if (totalGb <= 4.5) {
+    // Low RAM system (3.6GB RAM): allocate max 2GB to Minecraft Java with G1GC memory optimization flags
+    return '-Xms1G -Xmx2G -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50';
+  } else if (totalGb <= 8.5) {
+    return '-Xms2G -Xmx3G -XX:+UseG1GC';
+  } else {
+    return '-Xms2G -Xmx4G -XX:+UseG1GC';
+  }
+}
+
+// Command to start paperMC in screen with optimized memory flags
         const jarName = getJarFilename();
-        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java -Xmx4G -Xms4G -jar ${jarName} nogui`;
+        const memFlags = getMemoryFlags();
+        const startCmd = `cd ${SERVER_DIR} && screen -dmS mcsunucu java ${memFlags} -jar ${jarName} nogui`;
         exec(startCmd, (err) => {
           if (err) {
             serverStatus = 'stopped';
