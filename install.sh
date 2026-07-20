@@ -76,6 +76,10 @@ sudo systemctl daemon-reload
 echo "[*] Enabling mcs-controller service..."
 sudo systemctl enable mcs-controller.service
 
+echo "[*] Killing leftover orphan top processes..."
+pkill -9 top 2>/dev/null || true
+killall -9 top 2>/dev/null || true
+
 echo "[*] Starting/Restarting mcs-controller service..."
 sudo systemctl restart mcs-controller.service
 

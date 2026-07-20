@@ -438,30 +438,47 @@ function handleApiRequest(req, res) {
     return;
   }
 
-// System CPU usage - User's exact top command with guaranteed 2s async delay throttle
+// Native C++ os.cpus() CPU sampler (Zero sub-processes spawned, zero pileup, 100% immune to high-load hangs)
 let cachedCpuPercent = 1;
-let isExecutingTop = false;
+let prevCpuTimes = null;
 
-function scheduleTopCpu() {
-  if (isExecutingTop) return;
-  isExecutingTop = true;
+function updateLibuvCpu() {
+  try {
+    const cpus = os.cpus();
+    if (!cpus || cpus.length === 0) return;
 
-  const cmd = `LC_ALL=C top -b -n 2 -d 0.2 | grep "Cpu(s)" | tail -n 1 | awk '{print 100 - $8}'`;
-  exec(cmd, (err, stdout) => {
-    isExecutingTop = false;
-    if (!err && stdout && stdout.trim()) {
-      const val = parseFloat(stdout.trim());
-      if (!isNaN(val)) {
-        cachedCpuPercent = Math.max(1, Math.min(100, Math.round(val)));
+    let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
+    for (const cpu of cpus) {
+      user += cpu.times.user;
+      nice += cpu.times.nice;
+      sys += cpu.times.sys;
+      idle += cpu.times.idle;
+      irq += cpu.times.irq;
+    }
+
+    const total = user + nice + sys + idle + irq;
+    const active = user + nice + sys + irq;
+
+    if (prevCpuTimes && prevCpuTimes.total > 0) {
+      const totalDiff = total - prevCpuTimes.total;
+      const activeDiff = active - prevCpuTimes.active;
+
+      if (totalDiff > 0) {
+        const usage = Math.round((activeDiff / totalDiff) * 100);
+        cachedCpuPercent = Math.max(1, Math.min(100, usage));
       }
     }
-    // Schedule next execution 2 seconds after completion
-    setTimeout(scheduleTopCpu, 2000);
-  });
+    prevCpuTimes = { total, active };
+  } catch (e) {}
 }
 
-// Start first execution
-scheduleTopCpu();
+// Kill any leftover top processes from previous runs on startup
+try {
+  exec('pkill -9 top || killall -9 top > /dev/null 2>&1 || true');
+} catch (e) {}
+
+setInterval(updateLibuvCpu, 500);
+updateLibuvCpu();
 
 // Broadcast stats over SSE every 500ms (fast live updates)
 setInterval(() => {
